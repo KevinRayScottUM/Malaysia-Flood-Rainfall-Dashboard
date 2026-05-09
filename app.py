@@ -12,13 +12,11 @@ import streamlit as st
 st.set_page_config(
     page_title="Malaysia Rainfall & Flood Risk Dashboard",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
 )
 
 APP_DIR = Path(__file__).parent
 CSV_PATH = APP_DIR / "malaysia_chirps_2000_2026_city_rainfall_clean_eda.csv"
-MAIN_CSV_NAME = "malaysia_chirps_2000_2026_city_rainfall_clean_eda.csv"
-
 MAIN_CSV_NAME = "malaysia_chirps_2000_2026_city_rainfall_clean_eda.csv"
 
 
@@ -35,6 +33,7 @@ st.markdown(
     .block-container {
         padding-top: 1.5rem;
         padding-bottom: 2rem;
+        max-width: 1500px;
     }
 
     .metric-card {
@@ -47,6 +46,85 @@ st.markdown(
 
     h1, h2, h3 {
         letter-spacing: -0.02em;
+    }
+
+    /* Make Plotly charts and Streamlit widgets more comfortable on touch screens. */
+    div[data-testid="stSidebar"] button,
+    div[data-testid="stSidebar"] label,
+    div[data-testid="stSidebar"] input,
+    div[data-testid="stSidebar"] textarea,
+    div[data-testid="stSidebar"] [role="button"] {
+        min-height: 36px;
+    }
+
+    div[data-testid="stMetric"] {
+        background: rgba(255, 255, 255, 0.75);
+        border: 1px solid rgba(0,0,0,0.05);
+        border-radius: 14px;
+        padding: 10px 12px;
+    }
+
+    /* Mobile responsive layout */
+    @media (max-width: 768px) {
+        .block-container {
+            padding: 0.8rem 0.7rem 1.5rem 0.7rem;
+        }
+
+        h1 {
+            font-size: 1.45rem !important;
+            line-height: 1.22 !important;
+        }
+
+        h2 {
+            font-size: 1.15rem !important;
+        }
+
+        h3 {
+            font-size: 1.02rem !important;
+        }
+
+        p, label, span, div {
+            font-size: 0.92rem;
+        }
+
+        section[data-testid="stSidebar"] {
+            width: 92vw !important;
+            min-width: 92vw !important;
+        }
+
+        div[data-testid="stSidebarContent"] {
+            padding: 1rem 0.8rem;
+        }
+
+        div[data-baseweb="select"] {
+            font-size: 0.9rem;
+        }
+
+        div[data-testid="stMultiSelect"] [data-baseweb="tag"] {
+            max-width: 135px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        div[data-testid="stSlider"] {
+            padding-top: 0.2rem;
+            padding-bottom: 0.6rem;
+        }
+
+        div[data-testid="stMetric"] {
+            padding: 8px 10px;
+            margin-bottom: 0.35rem;
+        }
+
+        .js-plotly-plot .plotly .modebar {
+            transform: scale(0.82);
+            transform-origin: top right;
+        }
+
+        iframe {
+            max-width: 100% !important;
+        }
     }
     </style>
     """,
@@ -82,12 +160,48 @@ df = load_data()
 
 
 # =========================================================
+# 3.1) Responsive chart rendering helper
+# =========================================================
+PLOTLY_CONFIG = {
+    "responsive": True,
+    "displaylogo": False,
+    "scrollZoom": False,
+    "modeBarButtonsToRemove": [
+        "lasso2d",
+        "select2d",
+        "autoScale2d",
+    ],
+}
+
+
+def render_plotly(fig):
+    """Render Plotly charts in a responsive way for desktop and mobile browsers."""
+    fig.update_layout(
+        autosize=True,
+        font=dict(size=13),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="left",
+            x=0,
+        ),
+    )
+    st.plotly_chart(fig, width="stretch", config=PLOTLY_CONFIG)
+
+
+# =========================================================
 # 4) Header
 # =========================================================
 st.title("Malaysia CHIRPS Rainfall & Flood-Risk Dashboard")
 st.caption(
     "Interactive dashboard for city-level rainfall analysis, "
     "rainfall intensity level, and rainfall-based Flood_Risk_Binary from 2000 to 2026."
+)
+
+st.caption(
+    "Mobile-friendly mode is handled automatically by the browser layout: "
+    "on phones, controls become touch-friendly and charts stretch to the screen width."
 )
 
 
@@ -367,7 +481,7 @@ if chart_mode == "Static Trend":
         legend_title="City / Rainfall Variable",
     )
 
-    st.plotly_chart(fig_line, width="stretch")
+    render_plotly(fig_line)
 
 
 # =========================================================
@@ -460,8 +574,9 @@ else:
         )
 
         fig_anim_bar.update_layout(
-            height=600,
+            height=620,
             showlegend=False,
+            xaxis_tickangle=-35,
             xaxis_title="City",
             yaxis_title="Rainfall (mm)",
             transition_duration=animation_speed,
@@ -482,7 +597,7 @@ else:
             fig_anim_bar.layout.sliders[0].y = -0.15
             fig_anim_bar.layout.sliders[0].len = 0.76
 
-        st.plotly_chart(fig_anim_bar, width="stretch")
+        render_plotly(fig_anim_bar)
 
     # ---------------------------------------------------------
     # 15.2 Animated Line Chart - Robust cumulative trend animation
@@ -672,7 +787,7 @@ else:
             margin=dict(l=60, r=40, t=80, b=180),
         )
 
-        st.plotly_chart(fig_anim_line, width="stretch")
+        render_plotly(fig_anim_line)
 
     # ---------------------------------------------------------
     # 15.3 Animated Pie Chart: Rainfall Share by City
@@ -832,7 +947,7 @@ else:
             legend_title="City",
         )
 
-        st.plotly_chart(fig_pie, width="stretch")
+        render_plotly(fig_pie)
 
 
 # =========================================================
@@ -864,13 +979,13 @@ if show_flood_risk:
     )
 
     fig_risk.update_layout(
-        height=500,
+        height=520,
         hovermode="x unified",
         xaxis_title="Time",
         yaxis_title="Flood_Risk_Binary Count",
     )
 
-    st.plotly_chart(fig_risk, width="stretch")
+    render_plotly(fig_risk)
 
 
 # =========================================================
@@ -898,12 +1013,13 @@ fig_city = px.bar(
 )
 
 fig_city.update_layout(
-    height=500,
+    height=520,
     xaxis_title="City",
+    xaxis_tickangle=-35,
     yaxis_title="Flood Risk Signal Count",
 )
 
-st.plotly_chart(fig_city, width="stretch")
+render_plotly(fig_city)
 
 
 # =========================================================
@@ -927,12 +1043,12 @@ fig_heat = px.density_heatmap(
 )
 
 fig_heat.update_layout(
-    height=600,
+    height=620,
     xaxis_title="Month",
     yaxis_title="City",
 )
 
-st.plotly_chart(fig_heat, width="stretch")
+render_plotly(fig_heat)
 
 
 # =========================================================
