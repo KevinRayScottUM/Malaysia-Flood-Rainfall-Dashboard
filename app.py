@@ -488,10 +488,13 @@ def render_plotly(fig):
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=1.02,
+            y=1.08,
             xanchor="left",
             x=0,
-            font=dict(color="#F8FAFC"),
+            font=dict(color="#F8FAFC", size=11),
+            bgcolor="rgba(15,23,42,0.32)",
+            bordercolor="rgba(255,255,255,0.10)",
+            borderwidth=1,
         ),
     )
     fig.update_xaxes(
@@ -599,6 +602,61 @@ def build_animation_period_columns(input_df, agg_level):
         out["animation_period"] = out["period_dt"].dt.strftime("%Y-%m-%d")
         out["period_order"] = out["period_dt"]
     return out
+
+
+def expand_precipitation_points(input_df, intensity_col="rainfall_scaled", rings=4, points_per_ring=12):
+    """
+    Convert sparse city rainfall points into a soft visual field for density_mapbox.
+
+    This does not change the underlying rainfall data. It only creates extra
+    nearby weighted points so the map looks like a continuous precipitation
+    layer instead of isolated dots. The expansion is deterministic so animation
+    frames stay stable and do not jitter.
+    """
+    if input_df.empty:
+        return input_df.copy()
+
+    rows = []
+    base = input_df.copy()
+    base[intensity_col] = pd.to_numeric(base[intensity_col], errors="coerce").fillna(0.0)
+
+    # Malaysia city-level data is sparse, so these degree offsets create a
+    # visible but still geographically local glow around each city.
+    ring_offsets = np.linspace(0.10, 0.42, max(1, int(rings)))
+    angle_count = max(6, int(points_per_ring))
+    angles = np.linspace(0, 2 * np.pi, angle_count, endpoint=False)
+
+    for _, row in base.iterrows():
+        lat = float(row["_lat"])
+        lon = float(row["_lon"])
+        value = float(row[intensity_col])
+        if not np.isfinite(lat) or not np.isfinite(lon) or not np.isfinite(value):
+            continue
+
+        center = row.copy()
+        center["_vis_lat"] = lat
+        center["_vis_lon"] = lon
+        center["_vis_value"] = value
+        rows.append(center)
+
+        # Light rainfall still needs visible blue coverage; heavy rainfall gets
+        # a slightly stronger cloud, but the color scale remains data-driven.
+        for ring_idx, offset in enumerate(ring_offsets, start=1):
+            decay = 1.0 / (1.0 + ring_idx * 0.75)
+            for angle in angles:
+                expanded = row.copy()
+                # Longitude degrees shrink with latitude. Clamp keeps the
+                # correction stable near the equator.
+                lon_correction = max(0.25, np.cos(np.deg2rad(lat)))
+                expanded["_vis_lat"] = lat + offset * np.sin(angle)
+                expanded["_vis_lon"] = lon + (offset * np.cos(angle) / lon_correction)
+                expanded["_vis_value"] = value * decay
+                rows.append(expanded)
+
+    if not rows:
+        return base.assign(_vis_lat=base["_lat"], _vis_lon=base["_lon"], _vis_value=base[intensity_col])
+
+    return pd.DataFrame(rows).reset_index(drop=True)
 
 
 # =========================================================
@@ -884,12 +942,31 @@ if chart_mode == "Static Trend":
     )
 
     fig_line.update_layout(
-        height=550,
+        height=590,
         hovermode="x unified",
         transition_duration=500,
         xaxis_title="Time",
         yaxis_title="Rainfall (mm)",
-        legend_title="City / Rainfall Variable",
+        title=dict(
+            text=f"{aggregation_level} Rainfall Trend by City: {selected_rain_var}",
+            x=0.02,
+            xanchor="left",
+            y=0.98,
+            font=dict(size=19, color="#F8FAFC"),
+        ),
+        legend=dict(
+            title=dict(text="City / Rainfall Variable", font=dict(color="#F8FAFC", size=12)),
+            orientation="h",
+            yanchor="bottom",
+            y=1.04,
+            xanchor="left",
+            x=0.0,
+            font=dict(color="#F8FAFC", size=11),
+            bgcolor="rgba(15,23,42,0.35)",
+            bordercolor="rgba(255,255,255,0.12)",
+            borderwidth=1,
+        ),
+        margin=dict(l=70, r=35, t=125, b=65),
     )
 
     render_plotly(fig_line)
