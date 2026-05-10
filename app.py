@@ -1439,6 +1439,49 @@ elif chart_mode == "Animated Timeline":
 
 
 
+def build_compact_precipitation_field(input_df, value_col="rainfall_scaled", spread_deg=0.105):
+    """
+    Build a small, regular precipitation field around each city point.
+
+    This is intentionally NOT a big circular blob. It creates a compact 3x3
+    tile-like field so Plotly's Densitymapbox has enough nearby samples to
+    draw a visible rainfall layer, while keeping the number of points small
+    enough for Streamlit Cloud.
+    """
+    if input_df.empty:
+        return input_df.copy()
+
+    base = input_df.copy()
+    base[value_col] = pd.to_numeric(base[value_col], errors="coerce").fillna(0.0)
+
+    offsets = [
+        (0.0, 0.0, 1.00),
+        ( spread_deg, 0.0, 0.58), (-spread_deg, 0.0, 0.58),
+        (0.0,  spread_deg, 0.58), (0.0, -spread_deg, 0.58),
+        ( spread_deg,  spread_deg, 0.34), ( spread_deg, -spread_deg, 0.34),
+        (-spread_deg,  spread_deg, 0.34), (-spread_deg, -spread_deg, 0.34),
+    ]
+
+    rows = []
+    for _, row in base.iterrows():
+        lat = float(row["_lat"])
+        lon = float(row["_lon"])
+        val = float(row[value_col])
+        if not np.isfinite(lat) or not np.isfinite(lon) or not np.isfinite(val) or val <= 0:
+            continue
+        lon_correction = max(0.35, np.cos(np.deg2rad(lat)))
+        for dlat, dlon, weight in offsets:
+            r = row.copy()
+            r["_vis_lat"] = lat + dlat
+            r["_vis_lon"] = lon + dlon / lon_correction
+            r["_vis_value"] = val * weight
+            rows.append(r)
+
+    if not rows:
+        return pd.DataFrame(columns=list(base.columns) + ["_vis_lat", "_vis_lon", "_vis_value"])
+    return pd.DataFrame(rows).reset_index(drop=True)
+
+
 # =========================================================
 # 15.4) Apple Weather-style animated precipitation heatmap
 # =========================================================
@@ -1447,8 +1490,8 @@ if chart_mode == "Heatmap Animation":
     st.markdown(
         """
         <div class="glass-caption">
-            Optimized Heatmap Animation: this version uses the original city rainfall points directly instead of generating thousands of artificial glow points.
-            It keeps the map responsive on Streamlit Cloud and avoids oversized circular blobs.
+            Fast visible heatmap: the map now uses a compact regular precipitation field instead of oversized circular blobs.
+            The slider redraws only a limited number of frames so Yearly / Monthly / Daily mode will not freeze the dashboard.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1482,33 +1525,44 @@ if chart_mode == "Heatmap Animation":
 
         heat_radius = st.sidebar.slider(
             "Heatmap detail radius",
-            min_value=14,
-            max_value=50,
-            value=28,
+            min_value=10,
+            max_value=36,
+            value=20,
             step=2,
-            help="Lower radius keeps rainfall areas smaller and more detailed. Suggested: 22-32. Avoid very large values unless you want broad regional blur.",
+            help="Lower radius = sharper local rainfall patches. Suggested: 16–24. This avoids the ugly oversized target-circle effect.",
         )
+        field_spread = st.sidebar.slider(
+            "Heatmap field spread",
+            min_value=4,
+            max_value=18,
+            value=8,
+            step=1,
+            help="Controls how far each city rainfall value spreads on the map. Keep this low for a more detailed weather-layer look.",
+        ) / 100.0
         heat_opacity = st.sidebar.slider(
             "Heatmap opacity",
-            min_value=45,
-            max_value=88,
-            value=72,
-            step=4,
+            min_value=55,
+            max_value=92,
+            value=82,
+            step=3,
             help="Controls how strongly the rainfall layer covers the map.",
         ) / 100
 
         smooth_transition = st.sidebar.slider(
             "Heatmap transition smoothness",
             min_value=0,
-            max_value=600,
-            value=180,
-            step=30,
-            help="Lower values make switching Yearly/Monthly faster. Higher values make playback softer but slower.",
+            max_value=260,
+            value=70,
+            step=10,
+            help="Lower values make dragging the slider respond faster. Higher values look smoother but can feel slower on Streamlit Cloud.",
         )
 
         heat_anim = map_ready[map_ready["year"] >= animation_start_year].copy()
         heat_anim = build_animation_period_columns(heat_anim, aggregation_level)
 
+        # For a visual rainfall layer, daily mode should not average rainfall away too much.
+        # We still respect the selected rainfall variable, but the final display is log-scaled
+        # so small but non-zero rainfall remains visible.
         heat_group = heat_anim.groupby(
             ["animation_period", "period_order", "city", "state", "_lat", "_lon"],
             as_index=False,
@@ -1516,175 +1570,238 @@ if chart_mode == "Heatmap Animation":
             rainfall=(selected_rain_var, "mean"),
             flood_risk_count=("Flood_Risk_Binary", "sum"),
         )
-
         heat_group = heat_group.sort_values(["period_order", "city"]).reset_index(drop=True)
 
         if heat_group.empty:
             st.warning("No heatmap animation data is available for the selected filters.")
         else:
             unique_periods = heat_group[["animation_period", "period_order"]].drop_duplicates().sort_values("period_order")
-            frame_count = len(unique_periods)
-            max_frames = 220 if aggregation_level == "Daily" else 360
-            if frame_count > max_frames:
-                stride = int(np.ceil(frame_count / max_frames))
+            original_frame_count = len(unique_periods)
+
+            # Plotly map animations become sluggish when thousands of frames are pushed to the browser.
+            # This keeps the UI responsive while still showing a clear time evolution.
+            if aggregation_level == "Daily":
+                max_frames = 80
+            elif aggregation_level == "Monthly":
+                max_frames = 150
+            else:
+                max_frames = 360
+
+            if original_frame_count > max_frames:
+                stride = int(np.ceil(original_frame_count / max_frames))
                 keep_periods = unique_periods.iloc[::stride]["animation_period"].tolist()
                 heat_group = heat_group[heat_group["animation_period"].isin(keep_periods)].copy()
+                unique_periods = heat_group[["animation_period", "period_order"]].drop_duplicates().sort_values("period_order")
                 st.info(
-                    f"{aggregation_level} animation has {frame_count:,} frames, so the map displays every {stride}th frame "
-                    f"to keep interaction smooth on Streamlit Cloud. Use a shorter year range for full detail."
+                    f"{aggregation_level} mode has {original_frame_count:,} frames. To stop the browser from freezing, "
+                    f"this map renders every {stride}th frame. Narrow the year range for denser animation detail."
                 )
 
-            z_cap = float(heat_group["rainfall"].quantile(0.985))
-            z_cap = max(1.0, z_cap)
-            heat_group["rainfall_scaled"] = heat_group["rainfall"].clip(0, z_cap)
+            # Log scaling makes real differences visible. Without this, daily avg rainfall often looks blank
+            # because most city-day values are near zero compared with a few high-rainfall days.
+            raw_cap = float(heat_group["rainfall"].quantile(0.985))
+            raw_cap = max(1.0, raw_cap)
+            heat_group["rainfall_scaled"] = np.log1p(heat_group["rainfall"].clip(lower=0, upper=raw_cap)) / np.log1p(raw_cap) * 100.0
+            heat_group.loc[(heat_group["rainfall"] > 0) & (heat_group["rainfall_scaled"] < 8), "rainfall_scaled"] = 8
 
-            center_lat = float(heat_group["_lat"].mean())
-            center_lon = float(heat_group["_lon"].mean())
-
-            city_n = heat_group["city"].nunique()
-            state_n = heat_group["state"].nunique()
-            if city_n <= 2:
-                zoom_level = 7.0
-            elif city_n <= 6 and state_n <= 2:
-                zoom_level = 6.1
-            else:
-                zoom_level = 5.15
-
-            fig_heatmap_anim = px.density_mapbox(
+            # Build a compact regular field so the heatmap is visible but not a huge circular blob.
+            visual_field = build_compact_precipitation_field(
                 heat_group,
-                lat="_lat",
-                lon="_lon",
-                z="rainfall_scaled",
-                radius=heat_radius,
-                animation_frame="animation_period",
-                color_continuous_scale=PRECIPITATION_COLORSCALE,
-                range_color=[0, z_cap],
-                center={"lat": center_lat, "lon": center_lon},
-                zoom=zoom_level,
-                mapbox_style=map_style,
-                hover_name="city",
-                hover_data={
-                    "state": True,
-                    "rainfall": ":.2f",
-                    "rainfall_scaled": False,
-                    "flood_risk_count": True,
-                    "_lat": False,
-                    "_lon": False,
-                    "animation_period": True,
-                },
-                title=f"Animated {aggregation_level} Rainfall Heatmap: {selected_rain_var}",
+                value_col="rainfall_scaled",
+                spread_deg=field_spread,
             )
 
-            fig_heatmap_anim.update_traces(opacity=heat_opacity)
+            if visual_field.empty:
+                st.warning("The selected period has no positive rainfall values, so no precipitation layer is visible. Try a wider date range or max_rainfall_mm.")
+            else:
+                center_lat = float(heat_group["_lat"].mean())
+                center_lon = float(heat_group["_lon"].mean())
+                lat_span = float(heat_group["_lat"].max() - heat_group["_lat"].min())
+                lon_span = float(heat_group["_lon"].max() - heat_group["_lon"].min())
+                max_span = max(lat_span, lon_span)
+                if max_span > 8:
+                    zoom_level = 4.35
+                elif max_span > 5:
+                    zoom_level = 4.85
+                elif max_span > 2.5:
+                    zoom_level = 5.55
+                else:
+                    zoom_level = 6.5
 
-            first_period = heat_group["animation_period"].iloc[0]
-            first_points = heat_group[heat_group["animation_period"] == first_period].copy()
-            label_trace = go.Scattermapbox(
-                lat=first_points["_lat"],
-                lon=first_points["_lon"],
-                mode="text",
-                text=first_points["city"],
-                textposition="top center",
-                textfont=dict(size=10, color="#F8FAFC"),
-                hoverinfo="skip",
-                name="City label",
-                showlegend=False,
-            )
-            fig_heatmap_anim.add_trace(label_trace)
+                periods = unique_periods["animation_period"].tolist()
+                first_period = periods[0]
+                first_field = visual_field[visual_field["animation_period"] == first_period]
 
-            for fr in fig_heatmap_anim.frames:
-                frame_points = heat_group[heat_group["animation_period"] == fr.name]
-                fr.data = tuple(fr.data) + (
-                    go.Scattermapbox(
-                        lat=frame_points["_lat"],
-                        lon=frame_points["_lon"],
-                        mode="text",
-                        text=frame_points["city"],
-                        textposition="top center",
-                        textfont=dict(size=10, color="#F8FAFC"),
-                        hoverinfo="skip",
-                        name="City label",
-                        showlegend=False,
+                density_kwargs = dict(
+                    radius=heat_radius,
+                    colorscale=PRECIPITATION_COLORSCALE,
+                    zmin=0,
+                    zmax=100,
+                    opacity=heat_opacity,
+                    colorbar=dict(
+                        title=dict(text="Precipitation", font=dict(color="#F8FAFC", size=13)),
+                        tickmode="array",
+                        tickvals=[8, 38, 68, 94],
+                        ticktext=["Light", "Moderate", "Heavy", "Extreme"],
+                        tickfont=dict(color="#F8FAFC", size=12),
+                        len=0.40,
+                        thickness=16,
+                        x=0.965,
+                        y=0.53,
+                        bgcolor="rgba(15,23,42,0.72)",
+                        bordercolor="rgba(255,255,255,0.32)",
+                        borderwidth=1,
+                    ),
+                    hovertemplate=(
+                        "<b>%{customdata[0]}</b><br>"
+                        "State: %{customdata[1]}<br>"
+                        "Rainfall: %{customdata[2]:.2f} mm<br>"
+                        "Frame: %{customdata[3]}<extra></extra>"
                     ),
                 )
 
-            fig_heatmap_anim.update_layout(
-                height=760,
-                margin=dict(l=0, r=0, t=64, b=110),
-                font=dict(color="#F8FAFC", size=13),
-                title=dict(font=dict(size=19, color="#F8FAFC"), x=0.02, xanchor="left"),
-                mapbox=dict(bearing=0, pitch=0),
-                coloraxis_colorbar=dict(
-                    title=dict(text="Precipitation", font=dict(color="#F8FAFC", size=13)),
-                    tickmode="array",
-                    tickvals=[0, z_cap * 0.33, z_cap * 0.66, z_cap],
-                    ticktext=["Light", "Moderate", "Heavy", "Extreme"],
-                    tickfont=dict(color="#F8FAFC", size=12),
-                    len=0.40,
-                    thickness=16,
-                    x=0.965,
-                    y=0.53,
-                    bgcolor="rgba(15,23,42,0.62)",
-                    bordercolor="rgba(255,255,255,0.30)",
-                    borderwidth=1,
-                ),
-                transition_duration=smooth_transition,
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-            )
+                def _density_trace(frame_df):
+                    return go.Densitymapbox(
+                        lat=frame_df["_vis_lat"],
+                        lon=frame_df["_vis_lon"],
+                        z=frame_df["_vis_value"],
+                        customdata=np.stack([
+                            frame_df["city"].astype(str),
+                            frame_df["state"].astype(str),
+                            frame_df["rainfall"].astype(float),
+                            frame_df["animation_period"].astype(str),
+                        ], axis=-1),
+                        **density_kwargs,
+                    )
 
-            if fig_heatmap_anim.layout.updatemenus:
-                menu = fig_heatmap_anim.layout.updatemenus[0]
-                menu.type = "buttons"
-                menu.direction = "left"
-                menu.x = 0.03
-                menu.y = -0.08
-                menu.xanchor = "left"
-                menu.yanchor = "top"
-                menu.pad = dict(r=10, t=10)
-                menu.bgcolor = "rgba(15,23,42,0.82)"
-                menu.bordercolor = "rgba(255,255,255,0.34)"
-                menu.borderwidth = 1
-                menu.font = dict(color="#F8FAFC", size=13)
-                if menu.buttons:
-                    menu.buttons[0].label = "▶ Start"
-                    menu.buttons[0].args[1]["frame"]["duration"] = animation_speed
-                    menu.buttons[0].args[1]["frame"]["redraw"] = True
-                    menu.buttons[0].args[1]["transition"]["duration"] = smooth_transition
-                    menu.buttons[0].args[1]["transition"]["easing"] = "cubic-in-out"
-                    menu.buttons[0].args[1]["fromcurrent"] = True
-                    if len(menu.buttons) > 1:
-                        menu.buttons[1].label = "Ⅱ Pause"
-                        menu.buttons[1].args[1]["frame"]["duration"] = 0
-                        menu.buttons[1].args[1]["transition"]["duration"] = 0
+                frames = []
+                for period in periods:
+                    frame_df = visual_field[visual_field["animation_period"] == period]
+                    frames.append(go.Frame(name=str(period), data=[_density_trace(frame_df)]))
 
-            if fig_heatmap_anim.layout.sliders:
-                slider = fig_heatmap_anim.layout.sliders[0]
-                slider.x = 0.18
-                slider.y = -0.075
-                slider.len = 0.76
-                slider.bgcolor = "rgba(15,23,42,0.78)"
-                slider.bordercolor = "rgba(255,255,255,0.30)"
-                slider.borderwidth = 1
-                slider.font = dict(color="#F8FAFC", size=11)
-                slider.currentvalue = dict(prefix="Frame = ", visible=True, font=dict(size=14, color="#F8FAFC"))
-                for step in slider.steps:
-                    step.args[1]["frame"]["duration"] = animation_speed
-                    step.args[1]["frame"]["redraw"] = True
-                    step.args[1]["transition"]["duration"] = smooth_transition
-                    step.args[1]["transition"]["easing"] = "cubic-in-out"
+                fig_heatmap_anim = go.Figure(data=[_density_trace(first_field)], frames=frames)
 
-            render_plotly(fig_heatmap_anim)
-
-            with st.expander("Map implementation note", expanded=False):
-                st.markdown(
-                    """
-                    - Previous version was slow because it generated many artificial expansion points around every city for every animation frame.
-                    - This optimized version uses the original city points directly with a smaller density radius, so Yearly and Monthly switching is much faster.
-                    - Daily animation is automatically frame-sampled when the selected range is too large, because thousands of daily Plotly animation frames are not practical in Streamlit Cloud.
-                    - This is still a city-level CHIRPS visualization, not an official radar product. It should be interpreted as a rainfall-intensity dashboard layer, not a real-time meteorological radar map.
-                    """
+                fig_heatmap_anim.update_layout(
+                    height=760,
+                    margin=dict(l=0, r=0, t=64, b=128),
+                    font=dict(color="#F8FAFC", size=13),
+                    title=dict(
+                        text=f"Animated {aggregation_level} Rainfall Heatmap: {selected_rain_var}",
+                        font=dict(size=19, color="#F8FAFC"),
+                        x=0.02,
+                        xanchor="left",
+                    ),
+                    mapbox=dict(
+                        style=map_style,
+                        center={"lat": center_lat, "lon": center_lon},
+                        zoom=zoom_level,
+                        bearing=0,
+                        pitch=0,
+                    ),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    transition_duration=smooth_transition,
+                    updatemenus=[
+                        dict(
+                            type="buttons",
+                            direction="right",
+                            x=0.03,
+                            y=-0.095,
+                            xanchor="left",
+                            yanchor="top",
+                            pad=dict(r=12, t=12, b=12, l=12),
+                            bgcolor="rgba(238,244,255,0.24)",
+                            bordercolor="rgba(255,255,255,0.52)",
+                            borderwidth=1,
+                            font=dict(color="#FFFFFF", size=14),
+                            buttons=[
+                                dict(
+                                    label="▶ Start",
+                                    method="animate",
+                                    args=[None, {
+                                        "frame": {"duration": animation_speed, "redraw": True},
+                                        "transition": {"duration": smooth_transition, "easing": "cubic-in-out"},
+                                        "fromcurrent": True,
+                                        "mode": "immediate",
+                                    }],
+                                ),
+                                dict(
+                                    label="Ⅱ Pause",
+                                    method="animate",
+                                    args=[[None], {
+                                        "frame": {"duration": 0, "redraw": False},
+                                        "transition": {"duration": 0},
+                                        "mode": "immediate",
+                                    }],
+                                ),
+                            ],
+                        ),
+                        dict(
+                            type="buttons",
+                            direction="right",
+                            x=0.30,
+                            y=-0.095,
+                            xanchor="left",
+                            yanchor="top",
+                            pad=dict(r=12, t=12, b=12, l=12),
+                            bgcolor="rgba(238,244,255,0.24)",
+                            bordercolor="rgba(255,255,255,0.52)",
+                            borderwidth=1,
+                            font=dict(color="#FFFFFF", size=14),
+                            buttons=[
+                                dict(label="＋ Zoom In", method="relayout", args=[{"mapbox.zoom": zoom_level + 0.85}]),
+                                dict(label="－ Zoom Out", method="relayout", args=[{"mapbox.zoom": max(3.2, zoom_level - 0.85)}]),
+                                dict(label="Reset Map", method="relayout", args=[{"mapbox.zoom": zoom_level, "mapbox.center": {"lat": center_lat, "lon": center_lon}}]),
+                            ],
+                        ),
+                    ],
+                    sliders=[
+                        dict(
+                            active=0,
+                            x=0.16,
+                            y=-0.075,
+                            len=0.80,
+                            xanchor="left",
+                            yanchor="top",
+                            pad=dict(t=36, b=12),
+                            bgcolor="rgba(238,244,255,0.16)",
+                            bordercolor="rgba(255,255,255,0.38)",
+                            borderwidth=1,
+                            font=dict(color="#F8FAFC", size=10),
+                            currentvalue=dict(
+                                prefix="Frame = ",
+                                visible=True,
+                                xanchor="right",
+                                font=dict(size=14, color="#FFFFFF"),
+                            ),
+                            steps=[
+                                dict(
+                                    label=str(period),
+                                    method="animate",
+                                    args=[[str(period)], {
+                                        "frame": {"duration": 0, "redraw": True},
+                                        "transition": {"duration": smooth_transition, "easing": "cubic-in-out"},
+                                        "mode": "immediate",
+                                    }],
+                                )
+                                for period in periods
+                            ],
+                        )
+                    ],
                 )
+
+                render_plotly(fig_heatmap_anim)
+
+                with st.expander("Map implementation note", expanded=False):
+                    st.markdown(
+                        """
+                        - The previous direct-city heatmap could look blank in Daily mode because many daily average values are close to zero.
+                        - This version uses log-scaled rainfall intensity and a compact 3×3 regular field around each city, so changes remain visible without drawing huge circular blobs.
+                        - Daily mode is frame-limited for browser performance. For full daily detail, narrow the year range first.
+                        - This is still a city-level CHIRPS dashboard visualization, not official real-time radar.
+                        """
+                    )
+
 
 # =========================================================
 # 16) Flood risk chart
