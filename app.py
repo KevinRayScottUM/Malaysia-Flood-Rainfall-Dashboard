@@ -266,7 +266,30 @@ st.markdown(
         margin: 8px 0 16px 0;
     }
 
-    </style>
+    
+
+    /* Keep buttons calm when the cursor is not on them. Avoid the "always-hovered" look. */
+    .stButton > button:not(:hover),
+    div[data-testid="stDownloadButton"] > button:not(:hover),
+    div[data-testid="stFormSubmitButton"] > button:not(:hover),
+    button[kind="primary"]:not(:hover),
+    button[kind="secondary"]:not(:hover) {
+        transform: none !important;
+        filter: none !important;
+    }
+
+    .stButton > button:focus:not(:hover),
+    div[data-testid="stDownloadButton"] > button:focus:not(:hover),
+    div[data-testid="stFormSubmitButton"] > button:focus:not(:hover),
+    button[kind="primary"]:focus:not(:hover),
+    button[kind="secondary"]:focus:not(:hover),
+    .stButton > button:active:not(:hover),
+    div[data-testid="stDownloadButton"] > button:active:not(:hover) {
+        outline: none !important;
+        box-shadow: 0 14px 34px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.34) !important;
+    }
+
+</style>
     """,
     unsafe_allow_html=True,
 )
@@ -469,7 +492,7 @@ df = load_data()
 PLOTLY_CONFIG = {
     "responsive": True,
     "displaylogo": False,
-    "scrollZoom": False,
+    "scrollZoom": True,
     "modeBarButtonsToRemove": [
         "lasso2d",
         "select2d",
@@ -513,13 +536,12 @@ def render_plotly(fig):
 # Apple Weather-like precipitation colors: transparent/white -> blue -> purple/pink -> yellow -> white.
 PRECIPITATION_COLORSCALE = [
     [0.00, "rgba(255,255,255,0.00)"],
-    [0.08, "rgba(56,189,248,0.20)"],
-    [0.22, "#2f9bff"],
-    [0.42, "#60d7ff"],
-    [0.62, "#c45cff"],
-    [0.78, "#ff62c7"],
-    [0.92, "#fde047"],
-    [1.00, "#fff7ad"],
+    [0.08, "rgba(86,197,255,0.18)"],
+    [0.22, "rgba(29,144,255,0.55)"],
+    [0.44, "rgba(70,116,255,0.68)"],
+    [0.64, "rgba(202,79,235,0.76)"],
+    [0.82, "rgba(255,219,64,0.82)"],
+    [1.00, "rgba(255,255,214,0.92)"],
 ]
 
 MAP_STYLE_OPTIONS = {
@@ -1439,47 +1461,58 @@ elif chart_mode == "Animated Timeline":
 
 
 
-def build_compact_precipitation_field(input_df, value_col="rainfall_scaled", spread_deg=0.105):
+def build_soft_paint_precipitation_field(input_df, value_col="rainfall_scaled", spread_deg=0.055, samples_per_city=31):
     """
-    Build a small, regular precipitation field around each city point.
+    Build a stable soft paint layer for every animation frame.
 
-    This is intentionally NOT a big circular blob. It creates a compact 3x3
-    tile-like field so Plotly's Densitymapbox has enough nearby samples to
-    draw a visible rainfall layer, while keeping the number of points small
-    enough for Streamlit Cloud.
+    Key design points:
+    - no density-map red target rings;
+    - same number/order of points in every frame, so Plotly can update marker colors
+      instead of destroying/recreating the map layer;
+    - deterministic sunflower offsets, so the cloud does not jitter between frames.
     """
     if input_df.empty:
-        return input_df.copy()
+        return pd.DataFrame(columns=list(input_df.columns) + ["_vis_lat", "_vis_lon", "_vis_value", "_paint_id"])
 
     base = input_df.copy()
     base[value_col] = pd.to_numeric(base[value_col], errors="coerce").fillna(0.0)
 
-    offsets = [
-        (0.0, 0.0, 1.00),
-        ( spread_deg, 0.0, 0.58), (-spread_deg, 0.0, 0.58),
-        (0.0,  spread_deg, 0.58), (0.0, -spread_deg, 0.58),
-        ( spread_deg,  spread_deg, 0.34), ( spread_deg, -spread_deg, 0.34),
-        (-spread_deg,  spread_deg, 0.34), (-spread_deg, -spread_deg, 0.34),
-    ]
+    periods = base[["animation_period", "period_order"]].drop_duplicates().sort_values("period_order")
+    city_cols = ["city", "state", "_lat", "_lon"]
+    cities = base[city_cols].drop_duplicates("city").sort_values("city").reset_index(drop=True)
+
+    # Fill missing city-period combinations with zero. This keeps frame arrays stable.
+    full = periods.assign(_k=1).merge(cities.assign(_k=1), on="_k").drop(columns="_k")
+    values = base[["animation_period", "city", value_col, "rainfall"]].copy()
+    full = full.merge(values, on=["animation_period", "city"], how="left")
+    full[value_col] = full[value_col].fillna(0.0)
+    full["rainfall"] = full["rainfall"].fillna(0.0)
+
+    n = int(max(13, min(samples_per_city, 49)))
+    golden = np.pi * (3.0 - np.sqrt(5.0))
+    offsets = [(0.0, 0.0, 1.0, 0)]
+    for i in range(1, n):
+        # sqrt radial distribution fills a disk instead of drawing an outline ring.
+        radius = np.sqrt(i / max(1, n - 1)) * spread_deg
+        theta = i * golden
+        weight = np.exp(-2.25 * (radius / max(spread_deg, 1e-6)) ** 2)
+        offsets.append((radius * np.sin(theta), radius * np.cos(theta), float(weight), i))
 
     rows = []
-    for _, row in base.iterrows():
+    for _, row in full.iterrows():
         lat = float(row["_lat"])
         lon = float(row["_lon"])
         val = float(row[value_col])
-        if not np.isfinite(lat) or not np.isfinite(lon) or not np.isfinite(val) or val <= 0:
-            continue
         lon_correction = max(0.35, np.cos(np.deg2rad(lat)))
-        for dlat, dlon, weight in offsets:
+        for dlat, dlon, weight, sample_id in offsets:
             r = row.copy()
             r["_vis_lat"] = lat + dlat
             r["_vis_lon"] = lon + dlon / lon_correction
             r["_vis_value"] = val * weight
+            r["_paint_id"] = f"{row['city']}::{sample_id:02d}"
             rows.append(r)
 
-    if not rows:
-        return pd.DataFrame(columns=list(base.columns) + ["_vis_lat", "_vis_lon", "_vis_value"])
-    return pd.DataFrame(rows).reset_index(drop=True)
+    return pd.DataFrame(rows).sort_values(["period_order", "city", "_paint_id"]).reset_index(drop=True)
 
 
 # =========================================================
@@ -1490,8 +1523,8 @@ if chart_mode == "Heatmap Animation":
     st.markdown(
         """
         <div class="glass-caption">
-            Fast visible heatmap: the map now uses a compact regular precipitation field instead of oversized circular blobs.
-            The slider redraws only a limited number of frames so Yearly / Monthly / Daily mode will not freeze the dashboard.
+            Smooth paint-layer heatmap: this version avoids target-circle blobs and updates marker colors in place,
+            so dragging the timeline feels smoother and the base map does not flash as aggressively.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1523,38 +1556,46 @@ if chart_mode == "Heatmap Animation":
         )
         map_style = map_style_options_runtime[map_style_label]
 
-        heat_radius = st.sidebar.slider(
-            "Heatmap detail radius",
+        paint_marker_size = st.sidebar.slider(
+            "Paint layer softness",
             min_value=10,
-            max_value=36,
-            value=20,
-            step=2,
-            help="Lower radius = sharper local rainfall patches. Suggested: 16–24. This avoids the ugly oversized target-circle effect.",
+            max_value=24,
+            value=15,
+            step=1,
+            help="Lower = sharper local paint. Higher = smoother paint. This is not a target-circle radius.",
         )
         field_spread = st.sidebar.slider(
-            "Heatmap field spread",
-            min_value=4,
-            max_value=18,
-            value=8,
+            "Paint layer spread",
+            min_value=3,
+            max_value=10,
+            value=5,
             step=1,
-            help="Controls how far each city rainfall value spreads on the map. Keep this low for a more detailed weather-layer look.",
+            help="Controls how far the soft paint extends around each city. Keep this small to avoid ugly giant blobs.",
         ) / 100.0
+        paint_samples = st.sidebar.slider(
+            "Paint smoothness samples",
+            min_value=13,
+            max_value=37,
+            value=25,
+            step=4,
+            help="More samples make the layer smoother but heavier. 21–29 is a good balance.",
+        )
         heat_opacity = st.sidebar.slider(
             "Heatmap opacity",
-            min_value=55,
-            max_value=92,
-            value=82,
+            min_value=45,
+            max_value=88,
+            value=70,
             step=3,
-            help="Controls how strongly the rainfall layer covers the map.",
+            help="Controls how strongly the rainfall paint layer covers the map.",
         ) / 100
 
         smooth_transition = st.sidebar.slider(
             "Heatmap transition smoothness",
-            min_value=0,
-            max_value=260,
-            value=70,
-            step=10,
-            help="Lower values make dragging the slider respond faster. Higher values look smoother but can feel slower on Streamlit Cloud.",
+            min_value=80,
+            max_value=650,
+            value=320,
+            step=20,
+            help="Higher values create smoother interpolation when dragging the timeline. Because this version updates marker colors in place, it can be smoother without full map redraw.",
         )
 
         heat_anim = map_ready[map_ready["year"] >= animation_start_year].copy()
@@ -1604,11 +1645,12 @@ if chart_mode == "Heatmap Animation":
             heat_group["rainfall_scaled"] = np.log1p(heat_group["rainfall"].clip(lower=0, upper=raw_cap)) / np.log1p(raw_cap) * 100.0
             heat_group.loc[(heat_group["rainfall"] > 0) & (heat_group["rainfall_scaled"] < 8), "rainfall_scaled"] = 8
 
-            # Build a compact regular field so the heatmap is visible but not a huge circular blob.
-            visual_field = build_compact_precipitation_field(
+            # Build a stable soft paint field. Same point order across frames = smoother slider transition.
+            visual_field = build_soft_paint_precipitation_field(
                 heat_group,
                 value_col="rainfall_scaled",
                 spread_deg=field_spread,
+                samples_per_city=paint_samples,
             )
 
             if visual_field.empty:
@@ -1632,54 +1674,57 @@ if chart_mode == "Heatmap Animation":
                 first_period = periods[0]
                 first_field = visual_field[visual_field["animation_period"] == first_period]
 
-                density_kwargs = dict(
-                    radius=heat_radius,
-                    colorscale=PRECIPITATION_COLORSCALE,
-                    zmin=0,
-                    zmax=100,
-                    opacity=heat_opacity,
-                    colorbar=dict(
-                        title=dict(text="Precipitation", font=dict(color="#F8FAFC", size=13)),
-                        tickmode="array",
-                        tickvals=[8, 38, 68, 94],
-                        ticktext=["Light", "Moderate", "Heavy", "Extreme"],
-                        tickfont=dict(color="#F8FAFC", size=12),
-                        len=0.40,
-                        thickness=16,
-                        x=0.965,
-                        y=0.53,
-                        bgcolor="rgba(15,23,42,0.72)",
-                        bordercolor="rgba(255,255,255,0.32)",
-                        borderwidth=1,
-                    ),
-                    hovertemplate=(
-                        "<b>%{customdata[0]}</b><br>"
-                        "State: %{customdata[1]}<br>"
-                        "Rainfall: %{customdata[2]:.2f} mm<br>"
-                        "Frame: %{customdata[3]}<extra></extra>"
-                    ),
+                marker_colorbar = dict(
+                    title=dict(text="Precipitation", font=dict(color="#F8FAFC", size=13)),
+                    tickmode="array",
+                    tickvals=[8, 38, 68, 94],
+                    ticktext=["Light", "Moderate", "Heavy", "Extreme"],
+                    tickfont=dict(color="#F8FAFC", size=12),
+                    len=0.40,
+                    thickness=16,
+                    x=0.965,
+                    y=0.53,
+                    bgcolor="rgba(15,23,42,0.72)",
+                    bordercolor="rgba(255,255,255,0.32)",
+                    borderwidth=1,
                 )
 
-                def _density_trace(frame_df):
-                    return go.Densitymapbox(
+                def _paint_trace(frame_df, show_scale=True):
+                    frame_df = frame_df.sort_values(["city", "_paint_id"]).reset_index(drop=True)
+                    return go.Scattermapbox(
                         lat=frame_df["_vis_lat"],
                         lon=frame_df["_vis_lon"],
-                        z=frame_df["_vis_value"],
+                        mode="markers",
                         customdata=np.stack([
                             frame_df["city"].astype(str),
                             frame_df["state"].astype(str),
                             frame_df["rainfall"].astype(float),
                             frame_df["animation_period"].astype(str),
                         ], axis=-1),
-                        **density_kwargs,
+                        marker=dict(
+                            size=paint_marker_size,
+                            color=frame_df["_vis_value"],
+                            cmin=0,
+                            cmax=100,
+                            colorscale=PRECIPITATION_COLORSCALE,
+                            opacity=heat_opacity,
+                            showscale=show_scale,
+                            colorbar=marker_colorbar if show_scale else None,
+                        ),
+                        hovertemplate=(
+                            "<b>%{customdata[0]}</b><br>"
+                            "State: %{customdata[1]}<br>"
+                            "Rainfall: %{customdata[2]:.2f} mm<br>"
+                            "Frame: %{customdata[3]}<extra></extra>"
+                        ),
                     )
 
                 frames = []
                 for period in periods:
                     frame_df = visual_field[visual_field["animation_period"] == period]
-                    frames.append(go.Frame(name=str(period), data=[_density_trace(frame_df)]))
+                    frames.append(go.Frame(name=str(period), data=[_paint_trace(frame_df, show_scale=True)]))
 
-                fig_heatmap_anim = go.Figure(data=[_density_trace(first_field)], frames=frames)
+                fig_heatmap_anim = go.Figure(data=[_paint_trace(first_field, show_scale=True)], frames=frames)
 
                 fig_heatmap_anim.update_layout(
                     height=760,
@@ -1710,8 +1755,9 @@ if chart_mode == "Heatmap Animation":
                             xanchor="left",
                             yanchor="top",
                             pad=dict(r=12, t=12, b=12, l=12),
-                            bgcolor="rgba(238,244,255,0.24)",
-                            bordercolor="rgba(255,255,255,0.52)",
+                            active=-1,
+                            bgcolor="rgba(238,244,255,0.12)",
+                            bordercolor="rgba(255,255,255,0.32)",
                             borderwidth=1,
                             font=dict(color="#FFFFFF", size=14),
                             buttons=[
@@ -1719,7 +1765,7 @@ if chart_mode == "Heatmap Animation":
                                     label="▶ Start",
                                     method="animate",
                                     args=[None, {
-                                        "frame": {"duration": animation_speed, "redraw": True},
+                                        "frame": {"duration": animation_speed, "redraw": False},
                                         "transition": {"duration": smooth_transition, "easing": "cubic-in-out"},
                                         "fromcurrent": True,
                                         "mode": "immediate",
@@ -1744,8 +1790,9 @@ if chart_mode == "Heatmap Animation":
                             xanchor="left",
                             yanchor="top",
                             pad=dict(r=12, t=12, b=12, l=12),
-                            bgcolor="rgba(238,244,255,0.24)",
-                            bordercolor="rgba(255,255,255,0.52)",
+                            active=-1,
+                            bgcolor="rgba(238,244,255,0.12)",
+                            bordercolor="rgba(255,255,255,0.32)",
                             borderwidth=1,
                             font=dict(color="#FFFFFF", size=14),
                             buttons=[
@@ -1779,7 +1826,7 @@ if chart_mode == "Heatmap Animation":
                                     label=str(period),
                                     method="animate",
                                     args=[[str(period)], {
-                                        "frame": {"duration": 0, "redraw": True},
+                                        "frame": {"duration": smooth_transition, "redraw": False},
                                         "transition": {"duration": smooth_transition, "easing": "cubic-in-out"},
                                         "mode": "immediate",
                                     }],
@@ -1795,10 +1842,10 @@ if chart_mode == "Heatmap Animation":
                 with st.expander("Map implementation note", expanded=False):
                     st.markdown(
                         """
-                        - The previous direct-city heatmap could look blank in Daily mode because many daily average values are close to zero.
-                        - This version uses log-scaled rainfall intensity and a compact 3×3 regular field around each city, so changes remain visible without drawing huge circular blobs.
-                        - Daily mode is frame-limited for browser performance. For full daily detail, narrow the year range first.
-                        - This is still a city-level CHIRPS dashboard visualization, not official real-time radar.
+                        - The heatmap now uses a soft paint-layer marker field, not Plotly density rings, so it should not show the ugly target-circle effect.
+                        - Frames keep the same point order and update marker colors in place. This reduces map flashing and makes timeline dragging smoother.
+                        - Daily mode is still frame-limited for browser performance. For full daily detail, narrow the year range first.
+                        - This is a city-level CHIRPS visual layer, not official real-time radar.
                         """
                     )
 
