@@ -520,11 +520,24 @@ PRECIPITATION_COLORSCALE = [
 ]
 
 MAP_STYLE_OPTIONS = {
-    "CARTO Voyager (recommended, no token)": "carto-voyager",
-    "OpenStreetMap (no token)": "open-street-map",
-    "CARTO Positron (light)": "carto-positron",
-    "CARTO Dark Matter": "carto-darkmatter",
+    # Most reliable token-free option on Streamlit Cloud.
+    "OpenStreetMap Standard (recommended, no token)": "open-street-map",
+    "CARTO Positron (clean light, no token)": "carto-positron",
+    "CARTO Dark Matter (dark, no token)": "carto-darkmatter",
 }
+
+
+def get_mapbox_token():
+    """Optional: use a real Mapbox API token from Streamlit secrets or environment."""
+    import os
+    token = None
+    try:
+        token = st.secrets.get("MAPBOX_TOKEN", None)
+    except Exception:
+        token = None
+    if not token:
+        token = os.environ.get("MAPBOX_TOKEN")
+    return token
 
 MALAYSIA_CITY_COORDS = {
     "Kuala Lumpur": (3.1390, 101.6869), "Putrajaya": (2.9264, 101.6964),
@@ -1357,9 +1370,8 @@ if chart_mode == "Heatmap Animation":
     st.markdown(
         """
         <div class="glass-caption">
-            Heatmap Animation now uses a real tile-map layer instead of a plain blank canvas.
-            The default map is CARTO Voyager / OpenStreetMap-based and needs no private API key.
-            If you later want Mapbox Satellite or Apple-style proprietary tiles, add a Mapbox token and switch the map style in code.
+            Heatmap Animation uses a real map tile layer. Default is OpenStreetMap because it is the most stable token-free option on Streamlit Cloud.
+            For a stronger production map API, add MAPBOX_TOKEN in Streamlit secrets and the app will expose Mapbox styles automatically.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1373,13 +1385,23 @@ if chart_mode == "Heatmap Animation":
             "Add latitude/longitude columns to the CSV or select supported Malaysian cities."
         )
     else:
+        map_style_options_runtime = dict(MAP_STYLE_OPTIONS)
+        mapbox_token = get_mapbox_token()
+        if mapbox_token:
+            px.set_mapbox_access_token(mapbox_token)
+            map_style_options_runtime.update({
+                "Mapbox Streets API (token)": "streets",
+                "Mapbox Light API (token)": "light",
+                "Mapbox Satellite Streets API (token)": "satellite-streets",
+            })
+
         map_style_label = st.sidebar.selectbox(
             "Map tile layer",
-            list(MAP_STYLE_OPTIONS.keys()),
+            list(map_style_options_runtime.keys()),
             index=0,
-            help="CARTO/OpenStreetMap tiles are stable for Streamlit deployment and do not require a token.",
+            help="Default uses OpenStreetMap with no token. Add MAPBOX_TOKEN in Streamlit secrets for Mapbox API styles.",
         )
-        map_style = MAP_STYLE_OPTIONS[map_style_label]
+        map_style = map_style_options_runtime[map_style_label]
 
         heat_radius = st.sidebar.slider(
             "Heatmap glow radius",
@@ -1441,11 +1463,18 @@ if chart_mode == "Heatmap Animation":
             else:
                 zoom_level = 5.05
 
-            fig_heatmap_anim = px.density_mapbox(
+            heat_visual = expand_precipitation_points(
                 heat_group,
-                lat="_lat",
-                lon="_lon",
-                z="rainfall_scaled",
+                intensity_col="rainfall_scaled",
+                rings=4,
+                points_per_ring=14,
+            )
+
+            fig_heatmap_anim = px.density_mapbox(
+                heat_visual,
+                lat="_vis_lat",
+                lon="_vis_lon",
+                z="_vis_value",
                 radius=heat_radius,
                 animation_frame="animation_period",
                 color_continuous_scale=PRECIPITATION_COLORSCALE,
@@ -1458,9 +1487,12 @@ if chart_mode == "Heatmap Animation":
                     "state": True,
                     "rainfall": ":.2f",
                     "rainfall_scaled": False,
+                    "_vis_value": False,
                     "flood_risk_count": True,
                     "_lat": False,
                     "_lon": False,
+                    "_vis_lat": False,
+                    "_vis_lon": False,
                     "animation_period": True,
                 },
                 title=f"Animated {aggregation_level} Rainfall Heatmap: {selected_rain_var}",
@@ -1479,7 +1511,7 @@ if chart_mode == "Heatmap Animation":
                 text=first_points["city"],
                 textposition="top center",
                 marker=dict(size=7, color="rgba(255,255,255,0.92)"),
-                textfont=dict(size=12, color="#0f172a"),
+                textfont=dict(size=12, color="#F8FAFC"),
                 hoverinfo="skip",
                 name="City label",
                 showlegend=False,
@@ -1497,7 +1529,7 @@ if chart_mode == "Heatmap Animation":
                         text=frame_points["city"],
                         textposition="top center",
                         marker=dict(size=7, color="rgba(255,255,255,0.92)"),
-                        textfont=dict(size=12, color="#0f172a"),
+                        textfont=dict(size=12, color="#F8FAFC"),
                         hoverinfo="skip",
                         name="City label",
                         showlegend=False,
@@ -1518,17 +1550,17 @@ if chart_mode == "Heatmap Animation":
                     pitch=0,
                 ),
                 coloraxis_colorbar=dict(
-                    title=dict(text="Precipitation", font=dict(color="#111827", size=13)),
+                    title=dict(text="Precipitation", font=dict(color="#F8FAFC", size=13)),
                     tickmode="array",
                     tickvals=[0, z_cap * 0.33, z_cap * 0.66, z_cap],
                     ticktext=["Light", "Moderate", "Heavy", "Extreme"],
-                    tickfont=dict(color="#111827", size=12),
+                    tickfont=dict(color="#F8FAFC", size=12),
                     len=0.42,
                     thickness=18,
                     x=0.965,
                     y=0.53,
-                    bgcolor="rgba(255,255,255,0.78)",
-                    bordercolor="rgba(255,255,255,0.86)",
+                    bgcolor="rgba(15,23,42,0.72)",
+                    bordercolor="rgba(255,255,255,0.36)",
                     borderwidth=1,
                 ),
                 transition_duration=smooth_transition,
@@ -1585,7 +1617,7 @@ if chart_mode == "Heatmap Animation":
 
             with st.expander("Map implementation note", expanded=False):
                 st.write(
-                    "This version uses CARTO/OpenStreetMap tile layers, which are reliable for Streamlit Cloud and do not require a secret token. "
+                    "This version defaults to OpenStreetMap tile layers because they are the most reliable token-free option on Streamlit Cloud. If MAPBOX_TOKEN is available in Streamlit secrets, Mapbox API styles are also enabled. "
                     "The precipitation colors are intentionally capped by the 98.5th percentile so the visual range does not become washed out by a few extreme records. "
                     "The values still come from your CHIRPS city-level rainfall dataset, so this is a rainfall-intensity visualization rather than an official radar product."
                 )
