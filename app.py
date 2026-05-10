@@ -554,16 +554,17 @@ def render_plotly(fig):
 
 
 # Apple Weather-like precipitation colors.
-# V14 uses a transparent/near-invisible low end, so the map no longer becomes
-# an ugly rectangular blue tile. Only sufficiently strong rainfall fields are drawn.
+# Important: the low end is blue, not transparent/white.
+# This creates an all-map light/moderate precipitation veil, while only high-rainfall
+# areas turn purple/pink/yellow. It avoids the ugly isolated city-bubble look.
 PRECIPITATION_COLORSCALE = [
-    [0.00, "rgba(14,165,233,0.00)"],     # hidden low field
-    [0.18, "rgba(14,165,233,0.10)"],     # faint soft edge
-    [0.34, "rgba(56,189,248,0.30)"],     # light blue edge only
-    [0.52, "rgba(168,85,247,0.72)"],     # purple
-    [0.70, "rgba(236,72,153,0.84)"],     # pink
-    [0.88, "rgba(253,224,71,0.92)"],     # heavy yellow
-    [1.00, "rgba(255,250,180,0.96)"],
+    [0.00, "rgba(125,211,252,0.72)"],   # light blue veil
+    [0.16, "rgba(56,189,248,0.78)"],
+    [0.34, "rgba(14,165,233,0.82)"],    # moderate blue
+    [0.54, "rgba(168,85,247,0.82)"],    # purple
+    [0.72, "rgba(236,72,153,0.86)"],    # pink
+    [0.88, "rgba(253,224,71,0.90)"],    # heavy yellow
+    [1.00, "rgba(255,250,180,0.94)"],
 ]
 
 MAP_STYLE_OPTIONS = {
@@ -1587,33 +1588,17 @@ if chart_mode == "Heatmap Animation":
             "Heatmap opacity",
             min_value=38,
             max_value=88,
-            value=72,
+            value=68,
             step=2,
-            help="Controls how strongly the visible rainfall field covers the map.",
+            help="Controls how strongly the rainfall field covers the map.",
         ) / 100
-        visible_threshold = st.sidebar.slider(
-            "Hide low blue background",
-            min_value=0,
-            max_value=60,
-            value=30,
-            step=2,
-            help="Higher values remove more weak blue cells, leaving only meaningful rainfall zones instead of a rectangular block.",
-        )
-        edge_softness = st.sidebar.slider(
-            "Heatmap edge softness",
-            min_value=4,
-            max_value=30,
-            value=14,
-            step=1,
-            help="Controls how much faint blue feathering remains around purple/pink/yellow rainfall zones.",
-        )
         field_cell_size = st.sidebar.slider(
             "Heatmap texture size",
-            min_value=5,
-            max_value=20,
-            value=8,
+            min_value=8,
+            max_value=24,
+            value=15,
             step=1,
-            help="Smaller values reduce the chunky square look and make the layer feel closer to a weather map texture.",
+            help="Controls the size of each soft raster-like field cell. Larger values blend more smoothly.",
         )
 
         smooth_transition = st.sidebar.slider(
@@ -1665,8 +1650,9 @@ if chart_mode == "Heatmap Animation":
                     f"this map renders every {stride}th frame. Narrow the year range for denser animation detail."
                 )
 
-            # Log scaling makes real differences visible. V14 keeps the low field transparent
-            # and only renders rainfall cells that are strong enough to avoid a rectangular overlay.
+            # Log scaling makes real differences visible. Then remap values into an Apple Weather-like
+            # palette where the entire map gets a blue light/moderate veil and only high-rainfall zones
+            # become purple/pink/yellow.
             raw_cap = float(heat_group["rainfall"].quantile(0.985))
             raw_cap = max(1.0, raw_cap)
             heat_group["rainfall_scaled"] = np.log1p(heat_group["rainfall"].clip(lower=0, upper=raw_cap)) / np.log1p(raw_cap) * 100.0
@@ -1759,30 +1745,19 @@ if chart_mode == "Heatmap Animation":
                     weight_sum = weights.sum(axis=1)
                     interpolated = (weights @ src_val) / np.maximum(weight_sum, 1e-9)
 
-                    # V14 visual fix:
-                    # Do NOT draw the whole grid. The old version painted all low-intensity cells blue,
-                    # which made the precipitation layer look like an ugly rectangle. Here, support and
-                    # intensity are combined, then weak cells are hidden. A small feather band is kept
-                    # around strong rainfall so the shape still feels like a weather layer, not circles.
+                    # Key visual fix: do NOT hide low-rainfall space. Apple Weather-style maps keep
+                    # a blue precipitation layer across the visible map, then paint stronger rainfall
+                    # zones over it. This avoids ugly isolated city circles / rectangular islands.
                     support = weight_sum / max(float(weight_sum.max()), 1e-9)
-                    support = np.power(np.clip(support, 0, 1), 0.42)
-                    field_val = np.clip(interpolated * support * 1.18, 0, 100)
+                    base_blue = 18.0
+                    hotspot = interpolated * np.power(np.clip(support, 0, 1), 0.34)
+                    field_val = np.clip(base_blue + hotspot * 0.86, 0, 100)
 
-                    hard_threshold = float(visible_threshold)
-                    soft_threshold = max(0.0, hard_threshold - float(edge_softness))
-                    visible = field_val >= soft_threshold
+                    # Render the whole geographic canvas as a transparent blue sheet. Map labels and
+                    # boundaries remain visible because the opacity is controlled separately.
+                    visible = np.ones_like(field_val, dtype=bool)
 
-                    # Push the feather edge into the low/transparent part of the colorscale. This keeps
-                    # high rainfall purple/pink/yellow while removing the rectangular blue background.
-                    field_val_display = field_val.copy()
-                    feather = (field_val_display >= soft_threshold) & (field_val_display < hard_threshold)
-                    if feather.any() and hard_threshold > soft_threshold:
-                        feather_ratio = (field_val_display[feather] - soft_threshold) / max(hard_threshold - soft_threshold, 1e-6)
-                        field_val_display[feather] = 10 + feather_ratio * 22
-                    strong = field_val_display >= hard_threshold
-                    field_val_display[strong] = np.clip(field_val_display[strong] * 1.25 + 8, 0, 100)
-
-                    hover_text = np.array([f"Frame: {str(frame_df['animation_period'].iloc[0])}<br>Rainfall layer intensity: {v:.1f}" for v in field_val_display[visible]])
+                    hover_text = np.array([f"Frame: {str(frame_df['animation_period'].iloc[0])}<br>Rainfall layer intensity: {v:.1f}" for v in field_val[visible]])
 
                     return go.Scattermapbox(
                         lat=grid_lat_flat[visible],
@@ -1790,7 +1765,7 @@ if chart_mode == "Heatmap Animation":
                         mode="markers",
                         marker=dict(
                             size=field_cell_size,
-                            color=field_val_display[visible],
+                            color=field_val[visible],
                             colorscale=PRECIPITATION_COLORSCALE,
                             cmin=0,
                             cmax=100,
@@ -1844,8 +1819,8 @@ if chart_mode == "Heatmap Animation":
                             xanchor="left",
                             yanchor="top",
                             pad=dict(r=12, t=12, b=12, l=12),
-                            bgcolor="rgba(255,255,255,0.20)",
-                            bordercolor="rgba(255,255,255,0.55)",
+                            bgcolor="rgba(15,23,42,0.42)",
+                            bordercolor="rgba(255,255,255,0.30)",
                             borderwidth=1,
                             font=dict(color="#FFFFFF", size=14),
                             buttons=[
@@ -1879,8 +1854,8 @@ if chart_mode == "Heatmap Animation":
                             xanchor="center",
                             yanchor="top",
                             pad=dict(r=12, t=12, b=12, l=12),
-                            bgcolor="rgba(255,255,255,0.20)",
-                            bordercolor="rgba(255,255,255,0.55)",
+                            bgcolor="rgba(15,23,42,0.42)",
+                            bordercolor="rgba(255,255,255,0.30)",
                             borderwidth=1,
                             font=dict(color="#FFFFFF", size=14),
                             buttons=[
@@ -1928,8 +1903,8 @@ if chart_mode == "Heatmap Animation":
                 with st.expander("Map implementation note", expanded=False):
                     st.markdown(
                         """
-                        - This V14 version no longer paints the full grid as a blue rectangle. Weak low-intensity cells are hidden.
-                        - Only meaningful rainfall zones remain visible, with a soft transparent/blue feather edge and stronger purple/pink/yellow cores.
+                        - This version renders a full blue precipitation veil across the selected map area, then highlights stronger rainfall zones in purple/pink/yellow.
+                        - It avoids the ugly city-circle look by using a fixed geographic interpolation canvas instead of one marker per city.
                         - The field is built from city-level CHIRPS rainfall by stable interpolation, so zooming and dragging the map will not recolor the same frame.
                         - Mouse-wheel zoom and drag-pan remain enabled; the built-in +/- map buttons are hidden.
                         - Daily mode is frame-limited for browser performance. For full daily detail, narrow the year range first.
