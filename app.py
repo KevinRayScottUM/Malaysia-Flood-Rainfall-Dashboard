@@ -1533,8 +1533,8 @@ if chart_mode == "Heatmap Animation":
     st.markdown(
         """
         <div class="glass-caption">
-            Rollback heatmap mode: this version returns to the large colored precipitation circles on a full-color OpenStreetMap base map.
-            Dragging the timeline changes the active frame, and Start/Pause plays the rainfall layer through time.
+            Apple Weather-style precipitation field: rainfall is rendered as a smooth map layer instead of oversized city bubbles.
+            Drag the timeline or press Start/Pause to watch the rainfall field evolve through time.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1566,30 +1566,38 @@ if chart_mode == "Heatmap Animation":
         )
         map_style = map_style_options_runtime[map_style_label]
 
-        heat_radius = st.sidebar.slider(
-            "Heatmap circle radius",
-            min_value=24,
-            max_value=72,
-            value=44,
+        field_resolution = st.sidebar.slider(
+            "Heatmap field detail",
+            min_value=28,
+            max_value=70,
+            value=48,
             step=2,
-            help="Larger radius restores the earlier big-circle precipitation look. Suggested: 38–52.",
+            help="Higher detail makes the rainfall field smoother but heavier. Suggested: 42–56.",
         )
         field_spread = st.sidebar.slider(
-            "Circle color spread",
-            min_value=8,
-            max_value=30,
-            value=16,
-            step=1,
-            help="Controls how widely each city rainfall value blends into the colored circle layer.",
+            "Heatmap spatial spread",
+            min_value=35,
+            max_value=180,
+            value=95,
+            step=5,
+            help="Controls how far rainfall spreads across nearby map areas. Higher values look more like a weather-app overlay.",
         ) / 100.0
         heat_opacity = st.sidebar.slider(
             "Heatmap opacity",
-            min_value=55,
-            max_value=92,
-            value=82,
-            step=3,
-            help="Controls how strongly the rainfall layer covers the map.",
+            min_value=38,
+            max_value=88,
+            value=68,
+            step=2,
+            help="Controls how strongly the rainfall field covers the map.",
         ) / 100
+        field_cell_size = st.sidebar.slider(
+            "Heatmap texture size",
+            min_value=8,
+            max_value=24,
+            value=15,
+            step=1,
+            help="Controls the size of each soft raster-like field cell. Larger values blend more smoothly.",
+        )
 
         smooth_transition = st.sidebar.slider(
             "Heatmap transition smoothness",
@@ -1647,12 +1655,12 @@ if chart_mode == "Heatmap Animation":
             heat_group["rainfall_scaled"] = np.log1p(heat_group["rainfall"].clip(lower=0, upper=raw_cap)) / np.log1p(raw_cap) * 100.0
             heat_group.loc[(heat_group["rainfall"] > 0) & (heat_group["rainfall_scaled"] < 8), "rainfall_scaled"] = 8
 
-            # Important fix:
-            # Do NOT use Densitymapbox here. Densitymapbox re-computes a screen-space density field
-            # after zoom/pan, so the same frame can visually turn blue or collapse into only the
-            # artificial 3x3 helper points. That was the root cause of the unstable blue-circle bug.
-            # Use one real map circle per city per frame instead: the marker color is locked to the
-            # rainfall value and stays stable when the user zooms or drags the map.
+            # Important design fix:
+            # Do NOT use Densitymapbox. It recomputes screen-space density after zoom/pan, which was
+            # the reason the same frame could suddenly turn blue or collapse into artificial helper dots.
+            # This version builds a fixed geographic interpolation field for every frame, then renders
+            # that field as many soft raster-like cells. The color is locked to rainfall intensity, so
+            # zooming does not recolor the same data.
             positive_heat_group = heat_group[heat_group["rainfall"] > 0].copy()
 
             if positive_heat_group.empty:
@@ -1675,69 +1683,97 @@ if chart_mode == "Heatmap Animation":
                 periods = unique_periods["animation_period"].tolist()
                 first_period = periods[0]
 
-                marker_colorbar = dict(
+                # Build one fixed geographic canvas for all frames. This makes the rainfall layer
+                # feel attached to the map surface instead of floating as large city bubbles.
+                pad_lat = max(0.45, lat_span * 0.12)
+                pad_lon = max(0.45, lon_span * 0.12)
+                grid_lat = np.linspace(
+                    float(heat_group["_lat"].min()) - pad_lat,
+                    float(heat_group["_lat"].max()) + pad_lat,
+                    int(field_resolution),
+                )
+                grid_lon = np.linspace(
+                    float(heat_group["_lon"].min()) - pad_lon,
+                    float(heat_group["_lon"].max()) + pad_lon,
+                    int(field_resolution),
+                )
+                grid_lon_mesh, grid_lat_mesh = np.meshgrid(grid_lon, grid_lat)
+                grid_lat_flat = grid_lat_mesh.ravel()
+                grid_lon_flat = grid_lon_mesh.ravel()
+
+                colorbar = dict(
                     title=dict(text="Precipitation", font=dict(color="#F8FAFC", size=13)),
                     tickmode="array",
-                    tickvals=[8, 38, 68, 94],
+                    tickvals=[10, 38, 68, 94],
                     ticktext=["Light", "Moderate", "Heavy", "Extreme"],
                     tickfont=dict(color="#F8FAFC", size=12),
                     len=0.40,
-                    thickness=16,
+                    thickness=18,
                     x=0.965,
                     y=0.53,
-                    bgcolor="rgba(15,23,42,0.72)",
-                    bordercolor="rgba(255,255,255,0.32)",
+                    bgcolor="rgba(255,255,255,0.16)",
+                    bordercolor="rgba(255,255,255,0.38)",
                     borderwidth=1,
                 )
 
-                def _circle_trace(frame_df):
+                def _field_trace(frame_df):
                     frame_df = frame_df[frame_df["rainfall"] > 0].copy()
                     if frame_df.empty:
-                        customdata = np.empty((0, 4), dtype=object)
-                        marker_size = []
-                    else:
-                        customdata = np.stack([
-                            frame_df["city"].astype(str),
-                            frame_df["state"].astype(str),
-                            frame_df["rainfall"].astype(float),
-                            frame_df["animation_period"].astype(str),
-                        ], axis=-1)
-                        marker_size = np.clip(
-                            heat_radius * (0.70 + 0.55 * frame_df["rainfall_scaled"].astype(float).to_numpy() / 100.0),
-                            14,
-                            92,
+                        return go.Scattermapbox(
+                            lat=[], lon=[], mode="markers",
+                            marker=dict(size=field_cell_size, color=[], colorscale=PRECIPITATION_COLORSCALE, cmin=0, cmax=100, opacity=heat_opacity, colorbar=colorbar),
+                            hoverinfo="skip", showlegend=False,
                         )
 
+                    src_lat = frame_df["_lat"].astype(float).to_numpy()
+                    src_lon = frame_df["_lon"].astype(float).to_numpy()
+                    src_val = frame_df["rainfall_scaled"].astype(float).to_numpy()
+
+                    # Approximate degree distance with longitude correction for Malaysia latitudes.
+                    lat0 = np.nanmean(src_lat)
+                    lon_scale = max(0.35, np.cos(np.deg2rad(lat0)))
+                    dlat = grid_lat_flat[:, None] - src_lat[None, :]
+                    dlon = (grid_lon_flat[:, None] - src_lon[None, :]) * lon_scale
+                    dist2 = dlat * dlat + dlon * dlon
+
+                    # Gaussian interpolation creates a stable soft precipitation sheet.
+                    sigma = max(0.16, float(field_spread))
+                    weights = np.exp(-dist2 / (2.0 * sigma * sigma))
+                    weight_sum = weights.sum(axis=1)
+                    field_val = (weights @ src_val) / np.maximum(weight_sum, 1e-9)
+
+                    # Fade out very weak cells so the base map and boundaries remain readable.
+                    support = weight_sum / max(float(weight_sum.max()), 1e-9)
+                    visible = (support > 0.045) & (field_val > 5.5)
+
+                    hover_text = np.array([f"Frame: {str(frame_df['animation_period'].iloc[0])}<br>Interpolated rainfall intensity: {v:.1f}" for v in field_val[visible]])
+
                     return go.Scattermapbox(
-                        lat=frame_df["_lat"],
-                        lon=frame_df["_lon"],
+                        lat=grid_lat_flat[visible],
+                        lon=grid_lon_flat[visible],
                         mode="markers",
                         marker=dict(
-                            size=marker_size,
-                            color=frame_df["rainfall_scaled"],
+                            size=field_cell_size,
+                            color=field_val[visible],
                             colorscale=PRECIPITATION_COLORSCALE,
                             cmin=0,
                             cmax=100,
                             opacity=heat_opacity,
-                            colorbar=marker_colorbar,
+                            colorbar=colorbar,
+                            symbol="circle",
                         ),
-                        customdata=customdata,
-                        hovertemplate=(
-                            "<b>%{customdata[0]}</b><br>"
-                            "State: %{customdata[1]}<br>"
-                            "Rainfall: %{customdata[2]:.2f} mm<br>"
-                            "Frame: %{customdata[3]}<extra></extra>"
-                        ),
+                        text=hover_text,
+                        hovertemplate="%{text}<extra></extra>",
                         showlegend=False,
                     )
 
                 frames = []
                 for period in periods:
                     frame_df = heat_group[heat_group["animation_period"] == period]
-                    frames.append(go.Frame(name=str(period), data=[_circle_trace(frame_df)]))
+                    frames.append(go.Frame(name=str(period), data=[_field_trace(frame_df)]))
 
                 first_field = heat_group[heat_group["animation_period"] == first_period]
-                fig_heatmap_anim = go.Figure(data=[_circle_trace(first_field)], frames=frames)
+                fig_heatmap_anim = go.Figure(data=[_field_trace(first_field)], frames=frames)
 
                 fig_heatmap_anim.update_layout(
                     height=760,
@@ -1855,8 +1891,9 @@ if chart_mode == "Heatmap Animation":
                 with st.expander("Map implementation note", expanded=False):
                     st.markdown(
                         """
-                        - This version uses one real map circle per city per frame, not artificial 3x3 density helper points.
-                        - Circle color is locked to the rainfall value, so zooming and dragging the map will not recolor the same frame.
+                        - This version renders a soft geographic precipitation field instead of large city bubbles.
+                        - The field is built from city-level CHIRPS rainfall by stable interpolation, so zooming and dragging the map will not recolor the same frame.
+                        - The layer is visualized as many small raster-like cells attached to the map surface, closer to Apple Weather's precipitation overlay style.
                         - Mouse-wheel zoom and drag-pan remain enabled; the built-in +/- map buttons are hidden.
                         - Daily mode is frame-limited for browser performance. For full daily detail, narrow the year range first.
                         - This is still a city-level CHIRPS dashboard visualization, not official real-time radar.
