@@ -492,21 +492,21 @@ PLOTLY_CONFIG = {
     ],
 }
 
-# Dedicated map config: normal charts should not steal page scrolling,
-# but the rainfall map must support mouse-wheel zoom and drag-pan.
+# Dedicated map config for the rainfall map.
+# IMPORTANT ANTI-FLICKER FIX:
+# Do NOT allow mouse-wheel zoom on the Plotly Mapbox layer. On Streamlit pages,
+# wheel zoom forces Mapbox tiles + thousands of rain particles to redraw while
+# the user is merely scrolling the page, which looks like a severe screen flash.
+# Users can still zoom with the Plotly modebar buttons and reset with Reset Map.
 PLOTLY_MAP_CONFIG = {
     "responsive": True,
     "displaylogo": False,
-    # Keep mouse-wheel zoom and drag-pan active on the map.
-    "scrollZoom": True,
-    # Hide the built-in +/- zoom buttons because the dashboard uses wheel zoom + drag-pan
-    # and a custom Reset Map button.
+    "scrollZoom": False,
+    "doubleClick": False,
     "modeBarButtonsToRemove": [
         "lasso2d",
         "select2d",
         "autoScale2d",
-        "zoomInMapbox",
-        "zoomOutMapbox",
     ],
 }
 
@@ -916,7 +916,8 @@ if apply_dashboard_update:
     st.session_state["show_raw_data"] = show_raw_data
     st.session_state["animation_start_year"] = int(animation_start_year)
     st.session_state["animation_speed"] = int(animation_speed)
-    st.rerun()
+    # No st.rerun() here. A form submit already reruns the script once;
+    # calling st.rerun() again causes a second full redraw and visible flash.
 
 # Use only the last applied values for the actual expensive rendering below.
 selected_states = st.session_state["selected_states"]
@@ -1592,7 +1593,7 @@ if chart_mode == "Heatmap Animation":
         """
         <div class="glass-caption">
             Apple Weather-style local precipitation patches: rainfall is rendered as fine, feathered particles around real city locations instead of a large rectangular overlay.
-            Drag the timeline or press Start/Pause to watch the rainfall field evolve through time.
+            Drag the timeline or press Start/Pause to watch the rainfall field evolve through time. Mouse-wheel map zoom is disabled on purpose so normal page scrolling does not make the map flash.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1697,7 +1698,7 @@ if chart_mode == "Heatmap Animation":
             st.session_state["field_cell_size"] = int(field_cell_size_pending)
             st.session_state["edge_feather_pct"] = int(edge_feather_pct_pending)
             st.session_state["smooth_transition"] = int(smooth_transition_pending)
-            st.rerun()
+            # No st.rerun() here. Avoid double rerender/flicker after applying style.
 
         map_style_label = st.session_state["map_style_label"]
         map_style = map_style_options_runtime[map_style_label]
@@ -1997,7 +1998,9 @@ if chart_mode == "Heatmap Animation":
                     plot_bgcolor="rgba(0,0,0,0)",
                     transition_duration=smooth_transition,
                     dragmode="pan",
-                    uirevision="rainfall-map",
+                    uirevision="rainfall-map-stable-v19",
+                    selectionrevision="rainfall-map-stable-v19",
+                    editrevision="rainfall-map-stable-v19",
                     updatemenus=[
                         dict(
                             type="buttons",
@@ -2087,7 +2090,7 @@ if chart_mode == "Heatmap Animation":
                     ],
                 )
 
-                st.plotly_chart(fig_heatmap_anim, width="stretch", config=PLOTLY_MAP_CONFIG)
+                st.plotly_chart(fig_heatmap_anim, width="stretch", config=PLOTLY_MAP_CONFIG, key="rainfall_heatmap_animation_stable_v19")
 
                 with st.expander("Map implementation note", expanded=False):
                     st.markdown(
@@ -2096,7 +2099,7 @@ if chart_mode == "Heatmap Animation":
                         - It uses high-density Fibonacci-disc micro-particles, so each city rainfall patch looks smoother and more circular instead of visibly made from a few dots.
                         - It uses a soft blue rainfall veil plus a separate stronger violet/pink/yellow core for heavy-rain zones.
                         - The field is built from city-level CHIRPS rainfall as local city patches, so it avoids pretending that city-level data is a full radar raster.
-                        - Mouse-wheel zoom and drag-pan remain enabled; the built-in +/- map buttons are hidden.
+                        - Mouse-wheel zoom is disabled to prevent tile/particle redraw flicker during normal page scrolling. Use the Plotly modebar zoom buttons or Reset Map instead.
                         - Daily mode is frame-limited for browser performance. For full daily detail, narrow the year range first.
                         - This is still a city-level CHIRPS dashboard visualization, not official real-time radar.
                         """
