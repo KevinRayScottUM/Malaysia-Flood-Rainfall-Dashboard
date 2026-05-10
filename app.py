@@ -273,6 +273,170 @@ st.markdown(
 
 
 # =========================================================
+# 2.1) High-contrast liquid-glass override
+#     The previous white glass skin made map titles, legends and
+#     Plotly controls unreadable on deployed Streamlit. This layer
+#     keeps the glass feeling but forces readable contrast.
+# =========================================================
+st.markdown(
+    """
+    <style>
+    :root {
+        --tt-bg-0: #070913;
+        --tt-bg-1: #101827;
+        --tt-panel: rgba(18, 24, 38, 0.76);
+        --tt-panel-soft: rgba(24, 32, 48, 0.62);
+        --tt-panel-strong: rgba(15, 23, 42, 0.88);
+        --tt-border: rgba(255, 255, 255, 0.20);
+        --tt-text: #f8fafc;
+        --tt-muted: rgba(226, 232, 240, 0.78);
+        --tt-accent: #ff4d57;
+        --tt-blue: #38bdf8;
+        --tt-purple: #d946ef;
+        --tt-yellow: #fde047;
+    }
+
+    html, body, .stApp, [data-testid="stAppViewContainer"] {
+        background:
+            radial-gradient(circle at 18% 8%, rgba(56, 189, 248, 0.22), transparent 34%),
+            radial-gradient(circle at 88% 12%, rgba(217, 70, 239, 0.18), transparent 30%),
+            linear-gradient(135deg, var(--tt-bg-0) 0%, var(--tt-bg-1) 55%, #07111f 100%) !important;
+        color: var(--tt-text) !important;
+    }
+
+    .main, .block-container, h1, h2, h3, h4, p, label, span, div {
+        color: var(--tt-text);
+    }
+
+    .block-container {
+        max-width: 1500px;
+    }
+
+    [data-testid="stHeader"] {
+        background: rgba(7, 9, 19, 0.72) !important;
+        backdrop-filter: blur(22px) saturate(160%);
+        -webkit-backdrop-filter: blur(22px) saturate(160%);
+    }
+
+    section[data-testid="stSidebar"] {
+        background: rgba(17, 24, 39, 0.86) !important;
+        border-right: 1px solid rgba(255,255,255,0.18) !important;
+        box-shadow: 16px 0 42px rgba(0,0,0,0.28);
+    }
+
+    section[data-testid="stSidebar"] * {
+        color: var(--tt-text) !important;
+        text-shadow: none !important;
+    }
+
+    div[data-testid="stSidebarContent"] {
+        background:
+            radial-gradient(circle at 0% 0%, rgba(56, 189, 248, 0.18), transparent 34%),
+            radial-gradient(circle at 100% 32%, rgba(217, 70, 239, 0.14), transparent 32%) !important;
+    }
+
+    .metric-card,
+    div[data-testid="stMetric"],
+    div[data-testid="stAlert"],
+    div[data-testid="stDataFrame"],
+    div[data-testid="stVerticalBlock"] > div:has(.js-plotly-plot) {
+        background:
+            linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.055)),
+            var(--tt-panel) !important;
+        border: 1px solid var(--tt-border) !important;
+        border-radius: 26px !important;
+        box-shadow: 0 22px 58px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.22) !important;
+        backdrop-filter: blur(22px) saturate(165%) !important;
+        -webkit-backdrop-filter: blur(22px) saturate(165%) !important;
+    }
+
+    div[data-testid="stVerticalBlock"] > div:has(.js-plotly-plot) {
+        padding: 16px 16px 8px 16px;
+    }
+
+    div[data-testid="stMetric"] label,
+    div[data-testid="stMetric"] div {
+        color: var(--tt-text) !important;
+        text-shadow: none !important;
+    }
+
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+        color: #ffffff !important;
+        font-weight: 850 !important;
+    }
+
+    .stButton > button,
+    div[data-testid="stDownloadButton"] > button,
+    div[data-testid="stFormSubmitButton"] > button,
+    button[kind="primary"],
+    button[kind="secondary"] {
+        color: #ffffff !important;
+        border: 1px solid rgba(255,255,255,0.32) !important;
+        border-radius: 999px !important;
+        background:
+            linear-gradient(135deg, rgba(255,255,255,0.22), rgba(255,255,255,0.08)),
+            radial-gradient(circle at 20% 15%, rgba(255,255,255,0.28), transparent 36%) !important;
+        box-shadow: 0 14px 34px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.34) !important;
+        backdrop-filter: blur(18px) saturate(180%) !important;
+        -webkit-backdrop-filter: blur(18px) saturate(180%) !important;
+        font-weight: 800 !important;
+    }
+
+    .stButton > button:hover,
+    div[data-testid="stDownloadButton"] > button:hover {
+        transform: translateY(-1px) scale(1.018);
+        border-color: rgba(255,255,255,0.55) !important;
+        background:
+            linear-gradient(135deg, rgba(255,255,255,0.30), rgba(255,255,255,0.12)),
+            radial-gradient(circle at 22% 15%, rgba(255,255,255,0.38), transparent 38%) !important;
+    }
+
+    div[data-baseweb="select"] > div,
+    div[data-baseweb="base-input"] > div,
+    div[data-testid="stMultiSelect"] [data-baseweb="select"] > div {
+        background: rgba(9, 12, 22, 0.48) !important;
+        border: 1px solid rgba(255,255,255,0.22) !important;
+        border-radius: 18px !important;
+    }
+
+    div[data-testid="stMultiSelect"] [data-baseweb="tag"] {
+        background: rgba(255, 77, 87, 0.95) !important;
+        color: #ffffff !important;
+        border-radius: 11px !important;
+    }
+
+    [data-testid="stRadio"] label, [data-testid="stCheckbox"] label {
+        color: var(--tt-text) !important;
+    }
+
+    .glass-caption {
+        color: var(--tt-text) !important;
+        background: rgba(15, 23, 42, 0.72) !important;
+        border: 1px solid rgba(255,255,255,0.18) !important;
+        box-shadow: 0 18px 44px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.22) !important;
+    }
+
+    /* Plotly text/controls need explicit dark-panel contrast on Streamlit Cloud. */
+    .js-plotly-plot .plotly text {
+        fill: #f8fafc !important;
+    }
+    .js-plotly-plot .modebar {
+        background: rgba(15, 23, 42, 0.76) !important;
+        border-radius: 14px !important;
+        border: 1px solid rgba(255,255,255,0.18) !important;
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+    }
+    .js-plotly-plot .modebar-btn svg path {
+        fill: #f8fafc !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+# =========================================================
 # 3) Load data
 # =========================================================
 @st.cache_data(show_spinner=True)
@@ -315,17 +479,30 @@ PLOTLY_CONFIG = {
 
 
 def render_plotly(fig):
-    """Render Plotly charts in a responsive way for desktop and mobile browsers."""
+    """Render Plotly charts in a responsive way with reliable contrast."""
     fig.update_layout(
         autosize=True,
-        font=dict(size=13),
+        font=dict(size=13, color="#F8FAFC"),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
         legend=dict(
             orientation="h",
             yanchor="bottom",
             y=1.02,
             xanchor="left",
             x=0,
+            font=dict(color="#F8FAFC"),
         ),
+    )
+    fig.update_xaxes(
+        color="#F8FAFC",
+        gridcolor="rgba(255,255,255,0.12)",
+        zerolinecolor="rgba(255,255,255,0.16)",
+    )
+    fig.update_yaxes(
+        color="#F8FAFC",
+        gridcolor="rgba(255,255,255,0.12)",
+        zerolinecolor="rgba(255,255,255,0.16)",
     )
     st.plotly_chart(fig, width="stretch", config=PLOTLY_CONFIG)
 
@@ -333,14 +510,21 @@ def render_plotly(fig):
 # Apple Weather-like precipitation colors: transparent/white -> blue -> purple/pink -> yellow -> white.
 PRECIPITATION_COLORSCALE = [
     [0.00, "rgba(255,255,255,0.00)"],
-    [0.10, "rgba(47,155,255,0.35)"],
-    [0.28, "#2f9bff"],
-    [0.48, "#64d8ff"],
-    [0.66, "#d45af3"],
-    [0.82, "#ff5bc8"],
-    [0.94, "#fff02e"],
-    [1.00, "#ffffff"],
+    [0.08, "rgba(56,189,248,0.20)"],
+    [0.22, "#2f9bff"],
+    [0.42, "#60d7ff"],
+    [0.62, "#c45cff"],
+    [0.78, "#ff62c7"],
+    [0.92, "#fde047"],
+    [1.00, "#fff7ad"],
 ]
+
+MAP_STYLE_OPTIONS = {
+    "CARTO Voyager (recommended, no token)": "carto-voyager",
+    "OpenStreetMap (no token)": "open-street-map",
+    "CARTO Positron (light)": "carto-positron",
+    "CARTO Dark Matter": "carto-darkmatter",
+}
 
 MALAYSIA_CITY_COORDS = {
     "Kuala Lumpur": (3.1390, 101.6869), "Putrajaya": (2.9264, 101.6964),
@@ -1173,10 +1357,9 @@ if chart_mode == "Heatmap Animation":
     st.markdown(
         """
         <div class="glass-caption">
-            This mode mimics the Apple Weather precipitation layer: light rainfall is blue,
-            moderate rainfall moves into purple/pink, heavy rainfall becomes yellow, and the
-            strongest cells move toward white. The map frame follows your selected year/month/day
-            aggregation and selected cities.
+            Heatmap Animation now uses a real tile-map layer instead of a plain blank canvas.
+            The default map is CARTO Voyager / OpenStreetMap-based and needs no private API key.
+            If you later want Mapbox Satellite or Apple-style proprietary tiles, add a Mapbox token and switch the map style in code.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1190,22 +1373,39 @@ if chart_mode == "Heatmap Animation":
             "Add latitude/longitude columns to the CSV or select supported Malaysian cities."
         )
     else:
+        map_style_label = st.sidebar.selectbox(
+            "Map tile layer",
+            list(MAP_STYLE_OPTIONS.keys()),
+            index=0,
+            help="CARTO/OpenStreetMap tiles are stable for Streamlit deployment and do not require a token.",
+        )
+        map_style = MAP_STYLE_OPTIONS[map_style_label]
+
         heat_radius = st.sidebar.slider(
             "Heatmap glow radius",
-            min_value=15,
-            max_value=70,
-            value=42,
+            min_value=20,
+            max_value=95,
+            value=58,
             step=5,
-            help="Larger values create a softer Apple Weather-style precipitation glow.",
+            help="Larger values create a softer precipitation glow. Use 55–70 for Apple Weather-like softness.",
         )
         heat_opacity = st.sidebar.slider(
             "Heatmap opacity",
-            min_value=30,
-            max_value=95,
-            value=72,
+            min_value=35,
+            max_value=90,
+            value=68,
             step=5,
             help="Controls how strongly the rainfall layer covers the map.",
         ) / 100
+
+        smooth_transition = st.sidebar.slider(
+            "Heatmap transition smoothness",
+            min_value=100,
+            max_value=1200,
+            value=420,
+            step=40,
+            help="Higher values make each frame blend more softly; lower values make playback faster.",
+        )
 
         heat_anim = map_ready[map_ready["year"] >= animation_start_year].copy()
         heat_anim = build_animation_period_columns(heat_anim, aggregation_level)
@@ -1223,28 +1423,41 @@ if chart_mode == "Heatmap Animation":
         if heat_group.empty:
             st.warning("No heatmap animation data is available for the selected filters.")
         else:
-            z_cap = float(heat_group["rainfall"].quantile(0.995))
+            # Use a high percentile cap to keep the blue/purple/yellow scale visible.
+            # A max-only scale makes most Malaysian city rainfall appear almost invisible.
+            z_cap = float(heat_group["rainfall"].quantile(0.985))
             z_cap = max(1.0, z_cap)
+            heat_group["rainfall_scaled"] = heat_group["rainfall"].clip(0, z_cap)
+
             center_lat = float(heat_group["_lat"].mean())
             center_lon = float(heat_group["_lon"].mean())
-            zoom_level = 5.0 if heat_group["state"].nunique() > 2 or heat_group["city"].nunique() > 6 else 6.2
+
+            city_n = heat_group["city"].nunique()
+            state_n = heat_group["state"].nunique()
+            if city_n <= 2:
+                zoom_level = 7.2
+            elif city_n <= 6 and state_n <= 2:
+                zoom_level = 6.3
+            else:
+                zoom_level = 5.05
 
             fig_heatmap_anim = px.density_mapbox(
                 heat_group,
                 lat="_lat",
                 lon="_lon",
-                z="rainfall",
+                z="rainfall_scaled",
                 radius=heat_radius,
                 animation_frame="animation_period",
                 color_continuous_scale=PRECIPITATION_COLORSCALE,
                 range_color=[0, z_cap],
                 center={"lat": center_lat, "lon": center_lon},
                 zoom=zoom_level,
-                mapbox_style="carto-positron",
+                mapbox_style=map_style,
                 hover_name="city",
                 hover_data={
                     "state": True,
                     "rainfall": ":.2f",
+                    "rainfall_scaled": False,
                     "flood_risk_count": True,
                     "_lat": False,
                     "_lon": False,
@@ -1254,63 +1467,127 @@ if chart_mode == "Heatmap Animation":
             )
 
             fig_heatmap_anim.update_traces(opacity=heat_opacity)
+
+            # Add city labels above the heat layer so the map does not feel empty.
+            first_period = heat_group["animation_period"].iloc[0]
+            first_points = heat_group[heat_group["animation_period"] == first_period].copy()
+
+            label_trace = go.Scattermapbox(
+                lat=first_points["_lat"],
+                lon=first_points["_lon"],
+                mode="markers+text",
+                text=first_points["city"],
+                textposition="top center",
+                marker=dict(size=7, color="rgba(255,255,255,0.92)"),
+                textfont=dict(size=12, color="#0f172a"),
+                hoverinfo="skip",
+                name="City label",
+                showlegend=False,
+            )
+            fig_heatmap_anim.add_trace(label_trace)
+
+            # Keep the label trace synchronized with every heatmap frame.
+            for fr in fig_heatmap_anim.frames:
+                frame_points = heat_group[heat_group["animation_period"] == fr.name]
+                fr.data = tuple(fr.data) + (
+                    go.Scattermapbox(
+                        lat=frame_points["_lat"],
+                        lon=frame_points["_lon"],
+                        mode="markers+text",
+                        text=frame_points["city"],
+                        textposition="top center",
+                        marker=dict(size=7, color="rgba(255,255,255,0.92)"),
+                        textfont=dict(size=12, color="#0f172a"),
+                        hoverinfo="skip",
+                        name="City label",
+                        showlegend=False,
+                    ),
+                )
+
             fig_heatmap_anim.update_layout(
                 height=780,
-                margin=dict(l=0, r=0, t=70, b=110),
+                margin=dict(l=0, r=0, t=70, b=120),
+                font=dict(color="#F8FAFC", size=13),
+                title=dict(
+                    font=dict(size=20, color="#F8FAFC"),
+                    x=0.02,
+                    xanchor="left",
+                ),
+                mapbox=dict(
+                    bearing=0,
+                    pitch=0,
+                ),
                 coloraxis_colorbar=dict(
-                    title="Precipitation",
+                    title=dict(text="Precipitation", font=dict(color="#111827", size=13)),
                     tickmode="array",
                     tickvals=[0, z_cap * 0.33, z_cap * 0.66, z_cap],
                     ticktext=["Light", "Moderate", "Heavy", "Extreme"],
+                    tickfont=dict(color="#111827", size=12),
                     len=0.42,
-                    thickness=16,
-                    bgcolor="rgba(255,255,255,0.62)",
-                    bordercolor="rgba(255,255,255,0.72)",
+                    thickness=18,
+                    x=0.965,
+                    y=0.53,
+                    bgcolor="rgba(255,255,255,0.78)",
+                    bordercolor="rgba(255,255,255,0.86)",
                     borderwidth=1,
                 ),
-                transition_duration=animation_speed,
+                transition_duration=smooth_transition,
                 paper_bgcolor="rgba(0,0,0,0)",
                 plot_bgcolor="rgba(0,0,0,0)",
             )
 
             if fig_heatmap_anim.layout.updatemenus:
-                fig_heatmap_anim.layout.updatemenus[0].type = "buttons"
-                fig_heatmap_anim.layout.updatemenus[0].direction = "left"
-                fig_heatmap_anim.layout.updatemenus[0].x = 0.03
-                fig_heatmap_anim.layout.updatemenus[0].y = -0.08
-                fig_heatmap_anim.layout.updatemenus[0].xanchor = "left"
-                fig_heatmap_anim.layout.updatemenus[0].yanchor = "top"
-                fig_heatmap_anim.layout.updatemenus[0].pad = dict(r=10, t=10)
-                fig_heatmap_anim.layout.updatemenus[0].bgcolor = "rgba(255,255,255,0.62)"
-                fig_heatmap_anim.layout.updatemenus[0].bordercolor = "rgba(255,255,255,0.76)"
-                fig_heatmap_anim.layout.updatemenus[0].borderwidth = 1
-                if fig_heatmap_anim.layout.updatemenus[0].buttons:
-                    fig_heatmap_anim.layout.updatemenus[0].buttons[0].label = "▶ Start"
-                    fig_heatmap_anim.layout.updatemenus[0].buttons[0].args[1]["frame"]["duration"] = animation_speed
-                    fig_heatmap_anim.layout.updatemenus[0].buttons[0].args[1]["transition"]["duration"] = int(animation_speed * 0.6)
-                    if len(fig_heatmap_anim.layout.updatemenus[0].buttons) > 1:
-                        fig_heatmap_anim.layout.updatemenus[0].buttons[1].label = "Ⅱ Pause"
+                menu = fig_heatmap_anim.layout.updatemenus[0]
+                menu.type = "buttons"
+                menu.direction = "left"
+                menu.x = 0.03
+                menu.y = -0.08
+                menu.xanchor = "left"
+                menu.yanchor = "top"
+                menu.pad = dict(r=10, t=10)
+                menu.bgcolor = "rgba(15,23,42,0.82)"
+                menu.bordercolor = "rgba(255,255,255,0.34)"
+                menu.borderwidth = 1
+                menu.font = dict(color="#F8FAFC", size=13)
+                if menu.buttons:
+                    menu.buttons[0].label = "▶ Start"
+                    menu.buttons[0].args[1]["frame"]["duration"] = animation_speed
+                    menu.buttons[0].args[1]["frame"]["redraw"] = True
+                    menu.buttons[0].args[1]["transition"]["duration"] = smooth_transition
+                    menu.buttons[0].args[1]["transition"]["easing"] = "cubic-in-out"
+                    menu.buttons[0].args[1]["fromcurrent"] = True
+                    if len(menu.buttons) > 1:
+                        menu.buttons[1].label = "Ⅱ Pause"
+                        menu.buttons[1].args[1]["frame"]["duration"] = 0
+                        menu.buttons[1].args[1]["transition"]["duration"] = 0
 
             if fig_heatmap_anim.layout.sliders:
-                fig_heatmap_anim.layout.sliders[0].x = 0.18
-                fig_heatmap_anim.layout.sliders[0].y = -0.07
-                fig_heatmap_anim.layout.sliders[0].len = 0.76
-                fig_heatmap_anim.layout.sliders[0].bgcolor = "rgba(255,255,255,0.56)"
-                fig_heatmap_anim.layout.sliders[0].bordercolor = "rgba(255,255,255,0.72)"
-                fig_heatmap_anim.layout.sliders[0].borderwidth = 1
-                fig_heatmap_anim.layout.sliders[0].currentvalue = dict(
-                    prefix="Forecast frame = ",
+                slider = fig_heatmap_anim.layout.sliders[0]
+                slider.x = 0.18
+                slider.y = -0.075
+                slider.len = 0.76
+                slider.bgcolor = "rgba(15,23,42,0.78)"
+                slider.bordercolor = "rgba(255,255,255,0.30)"
+                slider.borderwidth = 1
+                slider.font = dict(color="#F8FAFC", size=11)
+                slider.currentvalue = dict(
+                    prefix="Frame = ",
                     visible=True,
-                    font=dict(size=14, color="#111827"),
+                    font=dict(size=14, color="#F8FAFC"),
                 )
+                for step in slider.steps:
+                    step.args[1]["frame"]["duration"] = animation_speed
+                    step.args[1]["frame"]["redraw"] = True
+                    step.args[1]["transition"]["duration"] = smooth_transition
+                    step.args[1]["transition"]["easing"] = "cubic-in-out"
 
             render_plotly(fig_heatmap_anim)
 
-            with st.expander("Precipitation color legend and implementation note", expanded=False):
+            with st.expander("Map implementation note", expanded=False):
                 st.write(
-                    "The heatmap uses a custom Apple Weather-inspired color scale: blue for light rainfall, "
-                    "purple/pink for moderate rainfall, yellow for heavy rainfall, and near-white for the strongest rainfall cells. "
-                    "The data remains your CHIRPS city-level rainfall data, so this is a rainfall-intensity visualization, not an official weather-radar product."
+                    "This version uses CARTO/OpenStreetMap tile layers, which are reliable for Streamlit Cloud and do not require a secret token. "
+                    "The precipitation colors are intentionally capped by the 98.5th percentile so the visual range does not become washed out by a few extreme records. "
+                    "The values still come from your CHIRPS city-level rainfall dataset, so this is a rainfall-intensity visualization rather than an official radar product."
                 )
 
 
