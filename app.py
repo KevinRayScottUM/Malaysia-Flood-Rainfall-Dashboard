@@ -1447,8 +1447,8 @@ if chart_mode == "Heatmap Animation":
     st.markdown(
         """
         <div class="glass-caption">
-            Heatmap Animation uses a real map tile layer. Default is OpenStreetMap because it is the most stable token-free option on Streamlit Cloud.
-            For a stronger production map API, add MAPBOX_TOKEN in Streamlit secrets and the app will expose Mapbox styles automatically.
+            Optimized Heatmap Animation: this version uses the original city rainfall points directly instead of generating thousands of artificial glow points.
+            It keeps the map responsive on Streamlit Cloud and avoids oversized circular blobs.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1476,34 +1476,34 @@ if chart_mode == "Heatmap Animation":
             "Map tile layer",
             list(map_style_options_runtime.keys()),
             index=0,
-            help="Default uses OpenStreetMap with no token. Add MAPBOX_TOKEN in Streamlit secrets for Mapbox API styles.",
+            help="OpenStreetMap is the safest no-token option. Add MAPBOX_TOKEN in Streamlit secrets for Mapbox API styles.",
         )
         map_style = map_style_options_runtime[map_style_label]
 
         heat_radius = st.sidebar.slider(
-            "Heatmap glow radius",
-            min_value=20,
-            max_value=95,
-            value=58,
-            step=5,
-            help="Larger values create a softer precipitation glow. Use 55–70 for Apple Weather-like softness.",
+            "Heatmap detail radius",
+            min_value=14,
+            max_value=50,
+            value=28,
+            step=2,
+            help="Lower radius keeps rainfall areas smaller and more detailed. Suggested: 22-32. Avoid very large values unless you want broad regional blur.",
         )
         heat_opacity = st.sidebar.slider(
             "Heatmap opacity",
-            min_value=35,
-            max_value=90,
-            value=68,
-            step=5,
+            min_value=45,
+            max_value=88,
+            value=72,
+            step=4,
             help="Controls how strongly the rainfall layer covers the map.",
         ) / 100
 
         smooth_transition = st.sidebar.slider(
             "Heatmap transition smoothness",
-            min_value=100,
-            max_value=1200,
-            value=420,
-            step=40,
-            help="Higher values make each frame blend more softly; lower values make playback faster.",
+            min_value=0,
+            max_value=600,
+            value=180,
+            step=30,
+            help="Lower values make switching Yearly/Monthly faster. Higher values make playback softer but slower.",
         )
 
         heat_anim = map_ready[map_ready["year"] >= animation_start_year].copy()
@@ -1522,8 +1522,18 @@ if chart_mode == "Heatmap Animation":
         if heat_group.empty:
             st.warning("No heatmap animation data is available for the selected filters.")
         else:
-            # Use a high percentile cap to keep the blue/purple/yellow scale visible.
-            # A max-only scale makes most Malaysian city rainfall appear almost invisible.
+            unique_periods = heat_group[["animation_period", "period_order"]].drop_duplicates().sort_values("period_order")
+            frame_count = len(unique_periods)
+            max_frames = 220 if aggregation_level == "Daily" else 360
+            if frame_count > max_frames:
+                stride = int(np.ceil(frame_count / max_frames))
+                keep_periods = unique_periods.iloc[::stride]["animation_period"].tolist()
+                heat_group = heat_group[heat_group["animation_period"].isin(keep_periods)].copy()
+                st.info(
+                    f"{aggregation_level} animation has {frame_count:,} frames, so the map displays every {stride}th frame "
+                    f"to keep interaction smooth on Streamlit Cloud. Use a shorter year range for full detail."
+                )
+
             z_cap = float(heat_group["rainfall"].quantile(0.985))
             z_cap = max(1.0, z_cap)
             heat_group["rainfall_scaled"] = heat_group["rainfall"].clip(0, z_cap)
@@ -1534,24 +1544,17 @@ if chart_mode == "Heatmap Animation":
             city_n = heat_group["city"].nunique()
             state_n = heat_group["state"].nunique()
             if city_n <= 2:
-                zoom_level = 7.2
+                zoom_level = 7.0
             elif city_n <= 6 and state_n <= 2:
-                zoom_level = 6.3
+                zoom_level = 6.1
             else:
-                zoom_level = 5.05
-
-            heat_visual = expand_precipitation_points(
-                heat_group,
-                intensity_col="rainfall_scaled",
-                rings=4,
-                points_per_ring=14,
-            )
+                zoom_level = 5.15
 
             fig_heatmap_anim = px.density_mapbox(
-                heat_visual,
-                lat="_vis_lat",
-                lon="_vis_lon",
-                z="_vis_value",
+                heat_group,
+                lat="_lat",
+                lon="_lon",
+                z="rainfall_scaled",
                 radius=heat_radius,
                 animation_frame="animation_period",
                 color_continuous_scale=PRECIPITATION_COLORSCALE,
@@ -1564,12 +1567,9 @@ if chart_mode == "Heatmap Animation":
                     "state": True,
                     "rainfall": ":.2f",
                     "rainfall_scaled": False,
-                    "_vis_value": False,
                     "flood_risk_count": True,
                     "_lat": False,
                     "_lon": False,
-                    "_vis_lat": False,
-                    "_vis_lon": False,
                     "animation_period": True,
                 },
                 title=f"Animated {aggregation_level} Rainfall Heatmap: {selected_rain_var}",
@@ -1577,36 +1577,31 @@ if chart_mode == "Heatmap Animation":
 
             fig_heatmap_anim.update_traces(opacity=heat_opacity)
 
-            # Add city labels above the heat layer so the map does not feel empty.
             first_period = heat_group["animation_period"].iloc[0]
             first_points = heat_group[heat_group["animation_period"] == first_period].copy()
-
             label_trace = go.Scattermapbox(
                 lat=first_points["_lat"],
                 lon=first_points["_lon"],
-                mode="markers+text",
+                mode="text",
                 text=first_points["city"],
                 textposition="top center",
-                marker=dict(size=7, color="rgba(255,255,255,0.92)"),
-                textfont=dict(size=12, color="#F8FAFC"),
+                textfont=dict(size=10, color="#F8FAFC"),
                 hoverinfo="skip",
                 name="City label",
                 showlegend=False,
             )
             fig_heatmap_anim.add_trace(label_trace)
 
-            # Keep the label trace synchronized with every heatmap frame.
             for fr in fig_heatmap_anim.frames:
                 frame_points = heat_group[heat_group["animation_period"] == fr.name]
                 fr.data = tuple(fr.data) + (
                     go.Scattermapbox(
                         lat=frame_points["_lat"],
                         lon=frame_points["_lon"],
-                        mode="markers+text",
+                        mode="text",
                         text=frame_points["city"],
                         textposition="top center",
-                        marker=dict(size=7, color="rgba(255,255,255,0.92)"),
-                        textfont=dict(size=12, color="#F8FAFC"),
+                        textfont=dict(size=10, color="#F8FAFC"),
                         hoverinfo="skip",
                         name="City label",
                         showlegend=False,
@@ -1614,30 +1609,23 @@ if chart_mode == "Heatmap Animation":
                 )
 
             fig_heatmap_anim.update_layout(
-                height=780,
-                margin=dict(l=0, r=0, t=70, b=120),
+                height=760,
+                margin=dict(l=0, r=0, t=64, b=110),
                 font=dict(color="#F8FAFC", size=13),
-                title=dict(
-                    font=dict(size=20, color="#F8FAFC"),
-                    x=0.02,
-                    xanchor="left",
-                ),
-                mapbox=dict(
-                    bearing=0,
-                    pitch=0,
-                ),
+                title=dict(font=dict(size=19, color="#F8FAFC"), x=0.02, xanchor="left"),
+                mapbox=dict(bearing=0, pitch=0),
                 coloraxis_colorbar=dict(
                     title=dict(text="Precipitation", font=dict(color="#F8FAFC", size=13)),
                     tickmode="array",
                     tickvals=[0, z_cap * 0.33, z_cap * 0.66, z_cap],
                     ticktext=["Light", "Moderate", "Heavy", "Extreme"],
                     tickfont=dict(color="#F8FAFC", size=12),
-                    len=0.42,
-                    thickness=18,
+                    len=0.40,
+                    thickness=16,
                     x=0.965,
                     y=0.53,
-                    bgcolor="rgba(15,23,42,0.72)",
-                    bordercolor="rgba(255,255,255,0.36)",
+                    bgcolor="rgba(15,23,42,0.62)",
+                    bordercolor="rgba(255,255,255,0.30)",
                     borderwidth=1,
                 ),
                 transition_duration=smooth_transition,
@@ -1679,11 +1667,7 @@ if chart_mode == "Heatmap Animation":
                 slider.bordercolor = "rgba(255,255,255,0.30)"
                 slider.borderwidth = 1
                 slider.font = dict(color="#F8FAFC", size=11)
-                slider.currentvalue = dict(
-                    prefix="Frame = ",
-                    visible=True,
-                    font=dict(size=14, color="#F8FAFC"),
-                )
+                slider.currentvalue = dict(prefix="Frame = ", visible=True, font=dict(size=14, color="#F8FAFC"))
                 for step in slider.steps:
                     step.args[1]["frame"]["duration"] = animation_speed
                     step.args[1]["frame"]["redraw"] = True
@@ -1693,12 +1677,14 @@ if chart_mode == "Heatmap Animation":
             render_plotly(fig_heatmap_anim)
 
             with st.expander("Map implementation note", expanded=False):
-                st.write(
-                    "This version defaults to OpenStreetMap tile layers because they are the most reliable token-free option on Streamlit Cloud. If MAPBOX_TOKEN is available in Streamlit secrets, Mapbox API styles are also enabled. "
-                    "The precipitation colors are intentionally capped by the 98.5th percentile so the visual range does not become washed out by a few extreme records. "
-                    "The values still come from your CHIRPS city-level rainfall dataset, so this is a rainfall-intensity visualization rather than an official radar product."
+                st.markdown(
+                    """
+                    - Previous version was slow because it generated many artificial expansion points around every city for every animation frame.
+                    - This optimized version uses the original city points directly with a smaller density radius, so Yearly and Monthly switching is much faster.
+                    - Daily animation is automatically frame-sampled when the selected range is too large, because thousands of daily Plotly animation frames are not practical in Streamlit Cloud.
+                    - This is still a city-level CHIRPS visualization, not an official radar product. It should be interpreted as a rainfall-intensity dashboard layer, not a real-time meteorological radar map.
+                    """
                 )
-
 
 # =========================================================
 # 16) Flood risk chart
