@@ -728,22 +728,52 @@ st.caption(
 
 
 # =========================================================
-# 5) Sidebar filters
+# 5) Sidebar filters — anti-flicker apply panel
 # =========================================================
 st.sidebar.header("Control Panel")
 
-all_states = sorted(df["state"].dropna().unique())
-
-selected_states = st.sidebar.multiselect(
-    "Select state(s)",
-    all_states,
-    default=all_states,
+st.sidebar.markdown(
+    """
+    <div class="glass-caption" style="margin-bottom:0.75rem;">
+        Anti-flicker mode is enabled. Change controls first, then press <b>Apply update</b>.
+        The dashboard will rerender once instead of flashing after every click.
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
-if selected_states:
-    city_pool = sorted(
-        df[df["state"].isin(selected_states)]["city"].dropna().unique()
-    )
+all_states = sorted(df["state"].dropna().unique())
+rainfall_variables = [
+    "avg_rainfall_mm",
+    "max_rainfall_mm",
+    "min_rainfall_mm",
+    "median_rainfall_mm",
+]
+min_year = int(df["year"].min())
+max_year = int(df["year"].max())
+
+# Keep the previous applied values stable while the user edits the form.
+# This is the main fix for Streamlit's normal full-script rerun behavior.
+DEFAULT_DASHBOARD_STATE = {
+    "selected_states": all_states,
+    "selected_cities": [],
+    "selected_rain_var": "avg_rainfall_mm",
+    "selected_year_range": (2000, min(2026, max_year)),
+    "aggregation_level": "Yearly",
+    "chart_mode": "Static Trend",
+    "show_flood_risk": True,
+    "show_raw_data": False,
+    "animation_start_year": 2000,
+    "animation_speed": 700,
+}
+for _k, _v in DEFAULT_DASHBOARD_STATE.items():
+    st.session_state.setdefault(_k, _v)
+
+# Build city pool from the currently applied states. This avoids expensive rerenders
+# while the multiselect dropdown is being edited.
+_applied_states = st.session_state.get("selected_states") or all_states
+if _applied_states:
+    city_pool = sorted(df[df["state"].isin(_applied_states)]["city"].dropna().unique())
 else:
     city_pool = sorted(df["city"].dropna().unique())
 
@@ -758,138 +788,156 @@ default_cities = [
     ]
     if city in city_pool
 ]
-
 if not default_cities:
     default_cities = city_pool[:5]
 
-selected_cities = st.sidebar.multiselect(
-    "Select city/cities",
-    city_pool,
-    default=default_cities,
-)
+if not st.session_state.get("selected_cities"):
+    st.session_state["selected_cities"] = default_cities
 
-rainfall_variables = [
-    "avg_rainfall_mm",
-    "max_rainfall_mm",
-    "min_rainfall_mm",
-    "median_rainfall_mm",
-]
-
-selected_rain_var = st.sidebar.selectbox(
-    "Select rainfall variable",
-    rainfall_variables,
-    index=0,
-)
-
-
-# =========================================================
-# 6) Year range first
-#    Important:
-#    Year range must be selected before aggregation level.
-#    If the selected range is a single year, force Daily mode.
-# =========================================================
-min_year = int(df["year"].min())
-max_year = int(df["year"].max())
-
-selected_year_range = st.sidebar.slider(
-    "Year range",
-    min_value=min_year,
-    max_value=max_year,
-    value=(2000, min(2026, max_year)),
-    step=1,
-)
-
-single_year_mode = selected_year_range[0] == selected_year_range[1]
-
-
-# =========================================================
-# 7) Aggregation level logic
-# =========================================================
-if single_year_mode:
-    selected_single_year = selected_year_range[0]
-
-    aggregation_level = "Daily"
-
-    st.sidebar.info(
-        f"Single-year mode: {selected_single_year}. "
-        "Aggregation level is locked to Daily so the dashboard shows all daily records in this year."
+with st.sidebar.form("dashboard_control_form", clear_on_submit=False):
+    selected_states = st.multiselect(
+        "Select state(s)",
+        all_states,
+        default=st.session_state.get("selected_states", all_states),
+        help="After changing states, press Apply update once. The city list updates after the apply step to prevent sidebar flicker.",
     )
 
-    st.sidebar.radio(
-        "Aggregation level",
-        ["Daily"],
-        index=0,
-        disabled=True,
-        help="Locked to Daily because Year range is a single year.",
+    # Use the previous city pool during form editing; invalid cities are removed safely after apply.
+    selected_cities = st.multiselect(
+        "Select city/cities",
+        city_pool,
+        default=[c for c in st.session_state.get("selected_cities", default_cities) if c in city_pool] or default_cities,
     )
 
-else:
-    aggregation_level = st.sidebar.radio(
-        "Aggregation level",
-        ["Yearly", "Monthly", "Daily"],
-        index=0,
+    selected_rain_var = st.selectbox(
+        "Select rainfall variable",
+        rainfall_variables,
+        index=rainfall_variables.index(st.session_state.get("selected_rain_var", "avg_rainfall_mm"))
+        if st.session_state.get("selected_rain_var", "avg_rainfall_mm") in rainfall_variables else 0,
     )
 
+    selected_year_range = st.slider(
+        "Year range",
+        min_value=min_year,
+        max_value=max_year,
+        value=tuple(st.session_state.get("selected_year_range", (2000, min(2026, max_year)))),
+        step=1,
+    )
 
-# =========================================================
-# 8) Chart mode and display options
-# =========================================================
-chart_mode = st.sidebar.radio(
-    "Chart mode",
-    ["Static Trend", "Animated Timeline", "Heatmap Animation"],
-    index=0,
-)
+    form_single_year_mode = selected_year_range[0] == selected_year_range[1]
 
-show_flood_risk = st.sidebar.checkbox(
-    "Show Flood_Risk_Binary chart",
-    value=True,
-)
+    if form_single_year_mode:
+        st.info(
+            f"Single-year mode: {selected_year_range[0]}. Aggregation will be locked to Daily after applying."
+        )
+        aggregation_level = "Daily"
+        st.radio(
+            "Aggregation level",
+            ["Daily"],
+            index=0,
+            disabled=True,
+            help="Locked to Daily because Year range is a single year.",
+        )
+    else:
+        _agg_options = ["Yearly", "Monthly", "Daily"]
+        _agg_default = st.session_state.get("aggregation_level", "Yearly")
+        if _agg_default not in _agg_options:
+            _agg_default = "Yearly"
+        aggregation_level = st.radio(
+            "Aggregation level",
+            _agg_options,
+            index=_agg_options.index(_agg_default),
+        )
 
-show_raw_data = st.sidebar.checkbox(
-    "Show filtered data preview",
-    value=False,
-)
+    _chart_options = ["Static Trend", "Animated Timeline", "Heatmap Animation"]
+    _chart_default = st.session_state.get("chart_mode", "Static Trend")
+    if _chart_default not in _chart_options:
+        _chart_default = "Static Trend"
+    chart_mode = st.radio(
+        "Chart mode",
+        _chart_options,
+        index=_chart_options.index(_chart_default),
+    )
 
+    show_flood_risk = st.checkbox(
+        "Show Flood_Risk_Binary chart",
+        value=bool(st.session_state.get("show_flood_risk", True)),
+    )
 
-# =========================================================
-# 9) Animation start control
-# =========================================================
-if chart_mode in ["Animated Timeline", "Heatmap Animation"]:
-    if single_year_mode:
+    show_raw_data = st.checkbox(
+        "Show filtered data preview",
+        value=bool(st.session_state.get("show_raw_data", False)),
+    )
+
+    if chart_mode in ["Animated Timeline", "Heatmap Animation"]:
+        if form_single_year_mode:
+            animation_start_year = selected_year_range[0]
+            st.caption(
+                f"Animation starts from {animation_start_year}. Single-year mode plays daily records within this year."
+            )
+        else:
+            _old_start = int(st.session_state.get("animation_start_year", selected_year_range[0]))
+            _old_start = max(selected_year_range[0], min(selected_year_range[1], _old_start))
+            animation_start_year = st.slider(
+                "Animation start year",
+                min_value=selected_year_range[0],
+                max_value=selected_year_range[1],
+                value=_old_start,
+                step=1,
+            )
+    else:
         animation_start_year = selected_year_range[0]
 
-        st.sidebar.caption(
-            f"Animation starts from {animation_start_year}. "
-            "Because only one year is selected, the animation will play daily records within this year."
-        )
+    animation_speed = st.slider(
+        "Animation speed",
+        min_value=200,
+        max_value=2000,
+        value=int(st.session_state.get("animation_speed", 700)),
+        step=100,
+        help="Lower value means faster animation.",
+    )
 
-    else:
-        animation_start_year = st.sidebar.slider(
-            "Animation start year",
-            min_value=selected_year_range[0],
-            max_value=selected_year_range[1],
-            value=selected_year_range[0],
-            step=1,
-        )
-else:
+    apply_dashboard_update = st.form_submit_button("Apply update", use_container_width=True)
+
+if apply_dashboard_update:
+    # Remove city choices that no longer exist after a state change.
+    _new_city_pool = sorted(df[df["state"].isin(selected_states)]["city"].dropna().unique()) if selected_states else sorted(df["city"].dropna().unique())
+    selected_cities = [c for c in selected_cities if c in _new_city_pool]
+    if not selected_cities:
+        selected_cities = [c for c in default_cities if c in _new_city_pool] or _new_city_pool[:5]
+
+    st.session_state["selected_states"] = selected_states
+    st.session_state["selected_cities"] = selected_cities
+    st.session_state["selected_rain_var"] = selected_rain_var
+    st.session_state["selected_year_range"] = tuple(selected_year_range)
+    st.session_state["aggregation_level"] = aggregation_level
+    st.session_state["chart_mode"] = chart_mode
+    st.session_state["show_flood_risk"] = show_flood_risk
+    st.session_state["show_raw_data"] = show_raw_data
+    st.session_state["animation_start_year"] = int(animation_start_year)
+    st.session_state["animation_speed"] = int(animation_speed)
+    st.rerun()
+
+# Use only the last applied values for the actual expensive rendering below.
+selected_states = st.session_state["selected_states"]
+selected_cities = st.session_state["selected_cities"]
+selected_rain_var = st.session_state["selected_rain_var"]
+selected_year_range = tuple(st.session_state["selected_year_range"])
+aggregation_level = st.session_state["aggregation_level"]
+chart_mode = st.session_state["chart_mode"]
+show_flood_risk = st.session_state["show_flood_risk"]
+show_raw_data = st.session_state["show_raw_data"]
+animation_start_year = int(st.session_state["animation_start_year"])
+animation_speed = int(st.session_state["animation_speed"])
+
+single_year_mode = selected_year_range[0] == selected_year_range[1]
+if single_year_mode:
+    aggregation_level = "Daily"
     animation_start_year = selected_year_range[0]
-
-
-# =========================================================
-# 10) Animation speed
-# =========================================================
-animation_speed = st.sidebar.slider(
-    "Animation speed",
-    min_value=200,
-    max_value=2000,
-    value=700,
-    step=100,
-    help="Lower value means faster animation.",
-)
-
 
 # =========================================================
 # 11) Filter data
+# =========================================================
 # =========================================================
 filtered = df[
     (df["year"] >= selected_year_range[0])
@@ -1568,63 +1616,97 @@ if chart_mode == "Heatmap Animation":
                 "Mapbox Satellite Streets API (token)": "satellite-streets",
             })
 
-        map_style_label = st.sidebar.selectbox(
-            "Map tile layer",
-            list(map_style_options_runtime.keys()),
-            index=0,
-            help="OpenStreetMap is the safest no-token option. Add MAPBOX_TOKEN in Streamlit secrets for Mapbox API styles.",
-        )
+        # Heatmap visual controls are also placed in a form. Without this,
+        # every small slider movement triggers a full Streamlit rerun and causes a visible flash.
+        st.session_state.setdefault("map_style_label", list(map_style_options_runtime.keys())[0])
+        st.session_state.setdefault("field_resolution", 520)
+        st.session_state.setdefault("field_spread_pct", 56)
+        st.session_state.setdefault("heat_opacity_pct", 44)
+        st.session_state.setdefault("field_cell_size", 6)
+        st.session_state.setdefault("edge_feather_pct", 8)
+        st.session_state.setdefault("smooth_transition", 120)
+
+        with st.sidebar.form("heatmap_visual_form", clear_on_submit=False):
+            _map_labels = list(map_style_options_runtime.keys())
+            _old_map_label = st.session_state.get("map_style_label", _map_labels[0])
+            if _old_map_label not in _map_labels:
+                _old_map_label = _map_labels[0]
+            map_style_label_pending = st.selectbox(
+                "Map tile layer",
+                _map_labels,
+                index=_map_labels.index(_old_map_label),
+                help="These visual settings are applied only after pressing Apply heatmap style, preventing slider-by-slider flicker.",
+            )
+
+            field_resolution_pending = st.slider(
+                "Rain texture detail",
+                min_value=160,
+                max_value=900,
+                value=int(st.session_state.get("field_resolution", 520)),
+                step=20,
+                help="High-DPI particle density for each city rain patch. Higher values pack many more micro-particles into the same local area, making the patch look smoother and less dot-like when zoomed.",
+            )
+            field_spread_pct_pending = st.slider(
+                "Rainfall influence radius",
+                min_value=22,
+                max_value=130,
+                value=int(st.session_state.get("field_spread_pct", 56)),
+                step=4,
+                help="Controls the local radius of each rainfall patch. Keep this moderate to preserve location precision.",
+            )
+            heat_opacity_pct_pending = st.slider(
+                "Rain layer opacity",
+                min_value=24,
+                max_value=76,
+                value=int(st.session_state.get("heat_opacity_pct", 44)),
+                step=2,
+                help="Controls the visual strength of the rainfall layer. Lower values look more elegant and map-like.",
+            )
+            field_cell_size_pending = st.slider(
+                "Rain particle size",
+                min_value=2,
+                max_value=12,
+                value=int(st.session_state.get("field_cell_size", 6)),
+                step=1,
+                help="Size of each micro-particle. Larger points look fuller; higher texture detail keeps the patch smooth.",
+            )
+            edge_feather_pct_pending = st.slider(
+                "Minimum visible rainfall",
+                min_value=4,
+                max_value=34,
+                value=int(st.session_state.get("edge_feather_pct", 8)),
+                step=1,
+                help="Hides very weak outer particles so the overlay stays precise instead of covering a large area.",
+            )
+
+            smooth_transition_pending = st.slider(
+                "Heatmap transition smoothness",
+                min_value=0,
+                max_value=360,
+                value=int(st.session_state.get("smooth_transition", 120)),
+                step=10,
+                help="Controls the transition when you drag the timeline or press Start.",
+            )
+            apply_heatmap_style = st.form_submit_button("Apply heatmap style", use_container_width=True)
+
+        if apply_heatmap_style:
+            st.session_state["map_style_label"] = map_style_label_pending
+            st.session_state["field_resolution"] = int(field_resolution_pending)
+            st.session_state["field_spread_pct"] = int(field_spread_pct_pending)
+            st.session_state["heat_opacity_pct"] = int(heat_opacity_pct_pending)
+            st.session_state["field_cell_size"] = int(field_cell_size_pending)
+            st.session_state["edge_feather_pct"] = int(edge_feather_pct_pending)
+            st.session_state["smooth_transition"] = int(smooth_transition_pending)
+            st.rerun()
+
+        map_style_label = st.session_state["map_style_label"]
         map_style = map_style_options_runtime[map_style_label]
-
-        field_resolution = st.sidebar.slider(
-            "Rain texture detail",
-            min_value=160,
-            max_value=900,
-            value=520,
-            step=20,
-            help="High-DPI particle density for each city rain patch. Higher values pack many more micro-particles into the same local area, making the patch look smoother and less dot-like when zoomed.",
-        )
-        field_spread = st.sidebar.slider(
-            "Rainfall influence radius",
-            min_value=22,
-            max_value=130,
-            value=56,
-            step=4,
-            help="Controls the local radius of each rainfall patch. This version uses a slightly larger but still location-precise footprint, so rainfall looks rounder without becoming a huge artificial blob.",
-        ) / 100.0
-        heat_opacity = st.sidebar.slider(
-            "Rain layer opacity",
-            min_value=24,
-            max_value=76,
-            value=44,
-            step=2,
-            help="Controls the visual strength of the rainfall layer. Lower values look more elegant and map-like.",
-        ) / 100
-        field_cell_size = st.sidebar.slider(
-            "Rain particle size",
-            min_value=2,
-            max_value=12,
-            value=6,
-            step=1,
-            help="Size of each micro-particle. This version defaults slightly larger, while the much higher texture detail keeps the circle visually smooth instead of sparse.",
-        )
-        edge_feather = st.sidebar.slider(
-            "Minimum visible rainfall",
-            min_value=4,
-            max_value=34,
-            value=8,
-            step=1,
-            help="Hides very weak outer particles so the overlay stays precise instead of covering a large area.",
-        ) / 100.0
-
-        smooth_transition = st.sidebar.slider(
-            "Heatmap transition smoothness",
-            min_value=0,
-            max_value=360,
-            value=120,
-            step=10,
-            help="Controls the transition when you drag the timeline or press Start.",
-        )
+        field_resolution = int(st.session_state["field_resolution"])
+        field_spread = int(st.session_state["field_spread_pct"]) / 100.0
+        heat_opacity = int(st.session_state["heat_opacity_pct"]) / 100.0
+        field_cell_size = int(st.session_state["field_cell_size"])
+        edge_feather = int(st.session_state["edge_feather_pct"]) / 100.0
+        smooth_transition = int(st.session_state["smooth_transition"])
 
         heat_anim = map_ready[map_ready["year"] >= animation_start_year].copy()
         heat_anim = build_animation_period_columns(heat_anim, aggregation_level)
