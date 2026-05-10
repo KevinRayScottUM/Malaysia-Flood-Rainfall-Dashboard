@@ -555,17 +555,15 @@ PLOTLY_CONFIG = {
 }
 
 # Dedicated map config for the rainfall map.
-# IMPORTANT ANTI-FLICKER FIX:
-# Do NOT allow mouse-wheel zoom on the Plotly Mapbox layer. On Streamlit pages,
-# wheel zoom forces Mapbox tiles + thousands of rain particles to redraw while
-# the user is merely scrolling the page, which looks like a severe screen flash.
-# Users can still zoom with the Plotly modebar buttons and reset with Reset Map.
+# v21: keep the user's preferred mouse-wheel zoom interaction.
+# To avoid the old flashing problem, hover labels and the floating modebar stay disabled,
+# but Mapbox wheel zoom is restored.
 PLOTLY_MAP_CONFIG = {
     "responsive": True,
     "displaylogo": False,
     "displayModeBar": False,
-    "scrollZoom": False,
-    "doubleClick": False,
+    "scrollZoom": True,
+    "doubleClick": "reset",
     "modeBarButtonsToRemove": [
         "lasso2d",
         "select2d",
@@ -1812,13 +1810,46 @@ if chart_mode == "Heatmap Animation":
                     f"this map renders every {stride}th frame. Narrow the year range for denser animation detail."
                 )
 
-            # Log scaling makes real differences visible. Then remap values into an Apple Weather-like
-            # palette where the entire map gets a blue light/moderate veil and only high-rainfall zones
-            # become purple/pink/yellow.
-            raw_cap = float(heat_group["rainfall"].quantile(0.985))
-            raw_cap = max(1.0, raw_cap)
-            heat_group["rainfall_scaled"] = np.log1p(heat_group["rainfall"].clip(lower=0, upper=raw_cap)) / np.log1p(raw_cap) * 100.0
-            heat_group.loc[(heat_group["rainfall"] > 0) & (heat_group["rainfall_scaled"] < 10), "rainfall_scaled"] = 10
+            # v21 DATA-TRUE SCALING FIX
+            # The old version scaled colors from only the currently selected cities/years.
+            # If the selected subset was small, even normal rainfall could become a yellow
+            # "extreme" core. That made every city look like the same blue-ring/yellow-center
+            # icon, which is visually misleading.
+            #
+            # This version builds a reference distribution from the full dataset under the
+            # selected year range + current aggregation level, then maps each displayed city's
+            # rainfall to that stable reference. Therefore color/size reflect the dataset, not
+            # just the visible subset. Zero or tiny rainfall will remain invisible or very light.
+            ref_df = df[(df["year"] >= selected_year_range[0]) & (df["year"] <= selected_year_range[1])].copy()
+            ref_df = build_animation_period_columns(ref_df, aggregation_level)
+            ref_group = ref_df.groupby(["animation_period", "city", "state"], as_index=False).agg(
+                rainfall=(selected_rain_var, "mean")
+            )
+            ref_values = pd.to_numeric(ref_group["rainfall"], errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+            ref_values = ref_values[ref_values > 0]
+
+            if ref_values.empty:
+                heat_group["rainfall_scaled"] = 0.0
+            else:
+                # Robust percentile anchors. p50 should not become yellow; only the upper
+                # tail earns pink/yellow. This keeps light/normal cities from being overstated.
+                q05, q35, q65, q85, q95, q99 = np.nanpercentile(ref_values, [5, 35, 65, 85, 95, 99])
+                anchors_x = np.array([0.0, q05, q35, q65, q85, q95, q99], dtype=float)
+                anchors_y = np.array([0.0, 8.0, 24.0, 42.0, 62.0, 82.0, 100.0], dtype=float)
+                # Ensure strictly increasing x anchors for np.interp when quantiles are close.
+                for i in range(1, len(anchors_x)):
+                    if anchors_x[i] <= anchors_x[i - 1]:
+                        anchors_x[i] = anchors_x[i - 1] + 1e-6
+
+                rain_values = pd.to_numeric(heat_group["rainfall"], errors="coerce").fillna(0.0).clip(lower=0.0)
+                heat_group["rainfall_scaled"] = np.interp(rain_values, anchors_x, anchors_y)
+                heat_group.loc[rain_values <= 0, "rainfall_scaled"] = 0.0
+
+                # For real tiny non-zero rain, show a faint blue speck only if the user allows it.
+                # Do NOT force all positive rainfall to 10+, because that created fake-looking
+                # identical blue rings for places with negligible rain.
+                tiny_floor = max(1.0, min(6.0, edge_feather * 35.0))
+                heat_group.loc[(rain_values > 0) & (heat_group["rainfall_scaled"] < tiny_floor), "rainfall_scaled"] = tiny_floor
 
             # Important design fix:
             # Do NOT use a full rectangular interpolation canvas or Plotly Densitymapbox.
@@ -1902,9 +1933,9 @@ if chart_mode == "Heatmap Animation":
                     rain_lat, rain_lon, rain_val, rain_text = [], [], [], []
                     core_lat, core_lon, core_val = [], [], []
 
-                    # Percentile threshold prevents very low rain from creating ugly oversized areas.
-                    # The small floor still allows genuine drizzle to appear as a tiny blue mist.
-                    visible_floor = max(8.0, edge_feather * 100.0)
+                    # Visibility floor is now applied to the DATA-TRUE scaled value.
+                    # Higher sidebar value hides weak/noisy rain; lower value keeps light drizzle visible.
+                    visible_floor = max(3.0, edge_feather * 100.0)
 
                     for _, row in frame_df.iterrows():
                         lat = float(row["_lat"])
@@ -1914,13 +1945,14 @@ if chart_mode == "Heatmap Animation":
                         if not np.isfinite(lat) or not np.isfinite(lon) or not np.isfinite(scaled):
                             continue
 
-                        # Rainfall controls BOTH color and physical footprint. This is the key fix:
-                        # small values no longer fill half the map; intense rainfall gets only a
-                        # compact but richer patch.
+                        # Rainfall controls BOTH color and physical footprint.
+                        # v21 change: footprint grows with true dataset-relative intensity.
+                        # Weak rainfall remains a small faint blue dot; only high-percentile rainfall
+                        # develops a larger purple/yellow core.
                         intensity = np.clip(scaled / 100.0, 0.0, 1.0)
-                        # Slightly larger than v16, but still intensity-controlled.
-                        # Low rainfall stays near the city; high rainfall gets a fuller, rounder disc.
-                        radius = (0.030 + field_spread * (0.068 + 0.62 * (intensity ** 1.42)))
+                        if intensity <= 0:
+                            continue
+                        radius = (0.018 + field_spread * (0.050 + 0.42 * (intensity ** 1.75)))
                         lon_correction = max(0.35, np.cos(np.deg2rad(lat)))
 
                         # Feather the outer edge by reducing value toward the boundary. Low edge
@@ -1928,9 +1960,10 @@ if chart_mode == "Heatmap Animation":
                         local_val = scaled * particle_weight
                         local_visible = local_val >= visible_floor
                         if not np.any(local_visible):
-                            # Keep only a tiny center point for very light rain.
-                            local_visible = particle_r <= 0.18
-                            local_val = np.maximum(local_val, min(18.0, scaled))
+                            # Keep only a tiny center point for real but very light rain; do not
+                            # inflate it into a blue-ring/yellow-center rainfall icon.
+                            local_visible = particle_r <= max(0.055, 0.10 + 0.18 * intensity)
+                            local_val = np.maximum(local_val, min(10.0, scaled))
 
                         lats = lat + particle_y[local_visible] * radius
                         lons = lon + particle_x[local_visible] * radius / lon_correction
@@ -1952,7 +1985,7 @@ if chart_mode == "Heatmap Animation":
                             mist_text.extend([text] * int(np.sum(mist_mask)))
 
                         # Main rainfall layer: colored local patch, still compact.
-                        rain_mask = vals >= 18
+                        rain_mask = vals >= max(12.0, visible_floor)
                         if np.any(rain_mask):
                             rain_lat.extend(lats[rain_mask])
                             rain_lon.extend(lons[rain_mask])
@@ -1960,7 +1993,7 @@ if chart_mode == "Heatmap Animation":
                             rain_text.extend([text] * int(np.sum(rain_mask)))
 
                         # Heavy core: only top intensity points, not the whole area.
-                        core_mask = vals >= 58
+                        core_mask = vals >= 68
                         if np.any(core_mask):
                             core_lat.extend(lats[core_mask])
                             core_lon.extend(lons[core_mask])
@@ -1999,7 +2032,7 @@ if chart_mode == "Heatmap Animation":
                             colorscale=PRECIPITATION_COLORSCALE,
                             cmin=0,
                             cmax=100,
-                            opacity=max(0.20, heat_opacity * 0.66),
+                            opacity=max(0.18, heat_opacity * (0.45 + 0.25 * min(1.0, float(np.nanmax(rain_val)) / 100.0 if len(rain_val) else 0.0))),
                             colorbar=colorbar,
                             symbol="circle",
                             allowoverlap=True,
@@ -2062,9 +2095,9 @@ if chart_mode == "Heatmap Animation":
                     hovermode=False,
                     hoverdistance=-1,
                     spikedistance=-1,
-                    uirevision="rainfall-map-stable-v20",
-                    selectionrevision="rainfall-map-stable-v20",
-                    editrevision="rainfall-map-stable-v20",
+                    uirevision="rainfall-map-stable-v21",
+                    selectionrevision="rainfall-map-stable-v21",
+                    editrevision="rainfall-map-stable-v21",
                     updatemenus=[
                         dict(
                             type="buttons",
@@ -2154,7 +2187,7 @@ if chart_mode == "Heatmap Animation":
                     ],
                 )
 
-                st.plotly_chart(fig_heatmap_anim, width="stretch", config=PLOTLY_MAP_CONFIG, key="rainfall_heatmap_animation_stable_v20")
+                st.plotly_chart(fig_heatmap_anim, width="stretch", config=PLOTLY_MAP_CONFIG, key="rainfall_heatmap_animation_stable_v21")
 
                 with st.expander("Map implementation note", expanded=False):
                     st.markdown(
@@ -2163,7 +2196,8 @@ if chart_mode == "Heatmap Animation":
                         - It uses high-density Fibonacci-disc micro-particles, so each city rainfall patch looks smoother and more circular instead of visibly made from a few dots.
                         - It uses a soft blue rainfall veil plus a separate stronger violet/pink/yellow core for heavy-rain zones.
                         - The field is built from city-level CHIRPS rainfall as local city patches, so it avoids pretending that city-level data is a full radar raster.
-                        - Mouse-wheel zoom, Plotly hover labels, and the floating Plotly modebar are disabled to prevent mouse-move repaint flicker. Use Start/Pause/Reset Map instead.
+                        - Mouse-wheel zoom is enabled again. Hover labels and the floating Plotly modebar remain disabled to reduce mouse-move flicker.
+                        - Color and patch radius are scaled against the selected dataset/year-range reference distribution, not only the currently visible city subset. This prevents every city from getting the same blue-ring/yellow-core look.
                         - Daily mode is frame-limited for browser performance. For full daily detail, narrow the year range first.
                         - This is still a city-level CHIRPS dashboard visualization, not official real-time radar.
                         """
