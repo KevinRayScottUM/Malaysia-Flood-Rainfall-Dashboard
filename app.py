@@ -1578,19 +1578,19 @@ if chart_mode == "Heatmap Animation":
 
         field_resolution = st.sidebar.slider(
             "Rain texture detail",
-            min_value=80,
-            max_value=520,
-            value=260,
+            min_value=160,
+            max_value=900,
+            value=520,
             step=20,
-            help="Super-sampling density for each city rain patch. Higher values add many micro-particles, making the patch look rounder and less pixel/dot-like when zoomed out.",
+            help="High-DPI particle density for each city rain patch. Higher values pack many more micro-particles into the same local area, making the patch look smoother and less dot-like when zoomed.",
         )
         field_spread = st.sidebar.slider(
             "Rainfall influence radius",
             min_value=22,
             max_value=130,
-            value=48,
+            value=56,
             step=4,
-            help="Controls the local radius of each rainfall patch. Lower values keep rainfall accurate and prevent huge artificial blobs.",
+            help="Controls the local radius of each rainfall patch. This version uses a slightly larger but still location-precise footprint, so rainfall looks rounder without becoming a huge artificial blob.",
         ) / 100.0
         heat_opacity = st.sidebar.slider(
             "Rain layer opacity",
@@ -1603,16 +1603,16 @@ if chart_mode == "Heatmap Animation":
         field_cell_size = st.sidebar.slider(
             "Rain particle size",
             min_value=2,
-            max_value=10,
-            value=4,
+            max_value=12,
+            value=6,
             step=1,
-            help="Size of each micro-particle. Use smaller values together with higher texture detail for a smoother high-resolution precipitation patch.",
+            help="Size of each micro-particle. This version defaults slightly larger, while the much higher texture detail keeps the circle visually smooth instead of sparse.",
         )
         edge_feather = st.sidebar.slider(
             "Minimum visible rainfall",
             min_value=4,
             max_value=34,
-            value=10,
+            value=8,
             step=1,
             help="Hides very weak outer particles so the overlay stays precise instead of covering a large area.",
         ) / 100.0
@@ -1706,23 +1706,26 @@ if chart_mode == "Heatmap Animation":
                 # The earlier version used too few visible particles, so zooming out could reveal
                 # dotted circular patches. This version uses Fibonacci-disc supersampling: many
                 # tiny points fill the whole local disc evenly, like increasing the texture DPI.
-                particle_count = int(field_resolution)
+                # Use more actual points than the sidebar value, because Plotly renders marker
+                # circles as separate screen glyphs. Oversampling makes each city patch feel
+                # like a high-resolution soft disc instead of a cluster of visible dots.
+                particle_count = int(field_resolution * 1.35)
                 golden_angle = np.pi * (3.0 - np.sqrt(5.0))
-                particle_idx = np.arange(max(80, particle_count), dtype=float)
+                particle_idx = np.arange(max(180, particle_count), dtype=float)
                 particle_n = max(1.0, float(len(particle_idx)))
                 particle_r = np.sqrt((particle_idx + 0.5) / particle_n)
                 particle_theta = particle_idx * golden_angle
 
                 # A tiny deterministic wobble breaks visible rings without changing the city location.
                 # It keeps the patch organic and smooth while remaining stable across animation frames.
-                wobble = 0.018 * np.sin(particle_idx * 12.9898 + 78.233)
+                wobble = 0.012 * np.sin(particle_idx * 12.9898 + 78.233)
                 particle_r = np.clip(particle_r + wobble * (1.0 - particle_r), 0.0, 1.0)
                 particle_x = particle_r * np.cos(particle_theta)
                 particle_y = particle_r * np.sin(particle_theta)
 
                 # Smooth radial falloff. Values fade gently at the boundary instead of forming
                 # a hard circle, while the dense micro-points make the visible patch look continuous.
-                particle_weight = np.exp(-3.35 * particle_r * particle_r)
+                particle_weight = np.exp(-3.05 * particle_r * particle_r)
 
                 colorbar = dict(
                     title=dict(text="Precipitation", font=dict(color="#F8FAFC", size=13)),
@@ -1769,7 +1772,9 @@ if chart_mode == "Heatmap Animation":
                         # small values no longer fill half the map; intense rainfall gets only a
                         # compact but richer patch.
                         intensity = np.clip(scaled / 100.0, 0.0, 1.0)
-                        radius = (0.026 + field_spread * (0.055 + 0.58 * (intensity ** 1.45)))
+                        # Slightly larger than v16, but still intensity-controlled.
+                        # Low rainfall stays near the city; high rainfall gets a fuller, rounder disc.
+                        radius = (0.030 + field_spread * (0.068 + 0.62 * (intensity ** 1.42)))
                         lon_correction = max(0.35, np.cos(np.deg2rad(lat)))
 
                         # Feather the outer edge by reducing value toward the boundary. Low edge
@@ -1820,7 +1825,7 @@ if chart_mode == "Heatmap Animation":
                         lon=mist_lon,
                         mode="markers",
                         marker=dict(
-                            size=max(2, int(field_cell_size * 0.70)),
+                            size=max(3, int(field_cell_size * 0.82)),
                             color=mist_val,
                             colorscale=[
                                 [0.00, "rgba(56,189,248,0.00)"],
@@ -1829,7 +1834,7 @@ if chart_mode == "Heatmap Animation":
                             ],
                             cmin=0,
                             cmax=55,
-                            opacity=max(0.12, heat_opacity * 0.52),
+                            opacity=max(0.14, heat_opacity * 0.48),
                             symbol="circle",
                             allowoverlap=True,
                         ),
@@ -1844,12 +1849,12 @@ if chart_mode == "Heatmap Animation":
                         lon=rain_lon,
                         mode="markers",
                         marker=dict(
-                            size=max(2, field_cell_size),
+                            size=max(3, field_cell_size),
                             color=rain_val,
                             colorscale=PRECIPITATION_COLORSCALE,
                             cmin=0,
                             cmax=100,
-                            opacity=max(0.22, heat_opacity * 0.72),
+                            opacity=max(0.20, heat_opacity * 0.66),
                             colorbar=colorbar,
                             symbol="circle",
                             allowoverlap=True,
@@ -1865,7 +1870,7 @@ if chart_mode == "Heatmap Animation":
                         lon=core_lon,
                         mode="markers",
                         marker=dict(
-                            size=max(2, int(field_cell_size * 0.92)),
+                            size=max(3, int(field_cell_size * 0.95)),
                             color=core_val,
                             colorscale=HOTSPOT_COLORSCALE,
                             cmin=0,
