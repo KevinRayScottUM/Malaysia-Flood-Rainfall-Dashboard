@@ -553,16 +553,18 @@ def render_plotly(fig):
     st.plotly_chart(fig, width="stretch", config=PLOTLY_CONFIG)
 
 
-# Apple Weather-like precipitation colors: transparent/white -> blue -> purple/pink -> yellow -> white.
+# Apple Weather-like precipitation colors.
+# Important: the low end is blue, not transparent/white.
+# This creates an all-map light/moderate precipitation veil, while only high-rainfall
+# areas turn purple/pink/yellow. It avoids the ugly isolated city-bubble look.
 PRECIPITATION_COLORSCALE = [
-    [0.00, "rgba(255,255,255,0.00)"],
-    [0.08, "rgba(56,189,248,0.20)"],
-    [0.22, "#2f9bff"],
-    [0.42, "#60d7ff"],
-    [0.62, "#c45cff"],
-    [0.78, "#ff62c7"],
-    [0.92, "#fde047"],
-    [1.00, "#fff7ad"],
+    [0.00, "rgba(125,211,252,0.72)"],   # light blue veil
+    [0.16, "rgba(56,189,248,0.78)"],
+    [0.34, "rgba(14,165,233,0.82)"],    # moderate blue
+    [0.54, "rgba(168,85,247,0.82)"],    # purple
+    [0.72, "rgba(236,72,153,0.86)"],    # pink
+    [0.88, "rgba(253,224,71,0.90)"],    # heavy yellow
+    [1.00, "rgba(255,250,180,0.94)"],
 ]
 
 MAP_STYLE_OPTIONS = {
@@ -1568,19 +1570,19 @@ if chart_mode == "Heatmap Animation":
 
         field_resolution = st.sidebar.slider(
             "Heatmap field detail",
-            min_value=28,
-            max_value=70,
-            value=48,
-            step=2,
-            help="Higher detail makes the rainfall field smoother but heavier. Suggested: 42–56.",
+            min_value=55,
+            max_value=115,
+            value=82,
+            step=3,
+            help="Higher detail makes the precipitation sheet smoother. Use 75–95 for an Apple Weather-like overlay.",
         )
         field_spread = st.sidebar.slider(
             "Heatmap spatial spread",
-            min_value=35,
-            max_value=180,
-            value=95,
+            min_value=45,
+            max_value=220,
+            value=125,
             step=5,
-            help="Controls how far rainfall spreads across nearby map areas. Higher values look more like a weather-app overlay.",
+            help="Controls how far high-rainfall areas spread into the blue background layer.",
         ) / 100.0
         heat_opacity = st.sidebar.slider(
             "Heatmap opacity",
@@ -1648,12 +1650,13 @@ if chart_mode == "Heatmap Animation":
                     f"this map renders every {stride}th frame. Narrow the year range for denser animation detail."
                 )
 
-            # Log scaling makes real differences visible. Without this, daily avg rainfall often looks blank
-            # because most city-day values are near zero compared with a few high-rainfall days.
+            # Log scaling makes real differences visible. Then remap values into an Apple Weather-like
+            # palette where the entire map gets a blue light/moderate veil and only high-rainfall zones
+            # become purple/pink/yellow.
             raw_cap = float(heat_group["rainfall"].quantile(0.985))
             raw_cap = max(1.0, raw_cap)
             heat_group["rainfall_scaled"] = np.log1p(heat_group["rainfall"].clip(lower=0, upper=raw_cap)) / np.log1p(raw_cap) * 100.0
-            heat_group.loc[(heat_group["rainfall"] > 0) & (heat_group["rainfall_scaled"] < 8), "rainfall_scaled"] = 8
+            heat_group.loc[(heat_group["rainfall"] > 0) & (heat_group["rainfall_scaled"] < 10), "rainfall_scaled"] = 10
 
             # Important design fix:
             # Do NOT use Densitymapbox. It recomputes screen-space density after zoom/pan, which was
@@ -1737,16 +1740,24 @@ if chart_mode == "Heatmap Animation":
                     dist2 = dlat * dlat + dlon * dlon
 
                     # Gaussian interpolation creates a stable soft precipitation sheet.
-                    sigma = max(0.16, float(field_spread))
+                    sigma = max(0.18, float(field_spread))
                     weights = np.exp(-dist2 / (2.0 * sigma * sigma))
                     weight_sum = weights.sum(axis=1)
-                    field_val = (weights @ src_val) / np.maximum(weight_sum, 1e-9)
+                    interpolated = (weights @ src_val) / np.maximum(weight_sum, 1e-9)
 
-                    # Fade out very weak cells so the base map and boundaries remain readable.
+                    # Key visual fix: do NOT hide low-rainfall space. Apple Weather-style maps keep
+                    # a blue precipitation layer across the visible map, then paint stronger rainfall
+                    # zones over it. This avoids ugly isolated city circles / rectangular islands.
                     support = weight_sum / max(float(weight_sum.max()), 1e-9)
-                    visible = (support > 0.045) & (field_val > 5.5)
+                    base_blue = 18.0
+                    hotspot = interpolated * np.power(np.clip(support, 0, 1), 0.34)
+                    field_val = np.clip(base_blue + hotspot * 0.86, 0, 100)
 
-                    hover_text = np.array([f"Frame: {str(frame_df['animation_period'].iloc[0])}<br>Interpolated rainfall intensity: {v:.1f}" for v in field_val[visible]])
+                    # Render the whole geographic canvas as a transparent blue sheet. Map labels and
+                    # boundaries remain visible because the opacity is controlled separately.
+                    visible = np.ones_like(field_val, dtype=bool)
+
+                    hover_text = np.array([f"Frame: {str(frame_df['animation_period'].iloc[0])}<br>Rainfall layer intensity: {v:.1f}" for v in field_val[visible]])
 
                     return go.Scattermapbox(
                         lat=grid_lat_flat[visible],
@@ -1761,6 +1772,7 @@ if chart_mode == "Heatmap Animation":
                             opacity=heat_opacity,
                             colorbar=colorbar,
                             symbol="circle",
+                            allowoverlap=True,
                         ),
                         text=hover_text,
                         hovertemplate="%{text}<extra></extra>",
@@ -1891,9 +1903,9 @@ if chart_mode == "Heatmap Animation":
                 with st.expander("Map implementation note", expanded=False):
                     st.markdown(
                         """
-                        - This version renders a soft geographic precipitation field instead of large city bubbles.
+                        - This version renders a full blue precipitation veil across the selected map area, then highlights stronger rainfall zones in purple/pink/yellow.
+                        - It avoids the ugly city-circle look by using a fixed geographic interpolation canvas instead of one marker per city.
                         - The field is built from city-level CHIRPS rainfall by stable interpolation, so zooming and dragging the map will not recolor the same frame.
-                        - The layer is visualized as many small raster-like cells attached to the map surface, closer to Apple Weather's precipitation overlay style.
                         - Mouse-wheel zoom and drag-pan remain enabled; the built-in +/- map buttons are hidden.
                         - Daily mode is frame-limited for browser performance. For full daily detail, narrow the year range first.
                         - This is still a city-level CHIRPS dashboard visualization, not official real-time radar.
