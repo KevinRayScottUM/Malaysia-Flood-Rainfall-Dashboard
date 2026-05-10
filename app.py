@@ -1461,58 +1461,110 @@ elif chart_mode == "Animated Timeline":
 
 
 
-def build_soft_paint_precipitation_field(input_df, value_col="rainfall_scaled", spread_deg=0.055, samples_per_city=31):
+
+def _hex_rgba(hex_color, alpha=1.0):
+    """Convert #RRGGBB to rgba() for Plotly colorscales."""
+    hex_color = hex_color.lstrip("#")
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+def build_regular_precipitation_grid(city_df, nx=52, ny=34, padding=0.55, influence_power=2.1, cutoff_deg=1.35):
     """
-    Build a stable soft paint layer for every animation frame.
+    Build a fixed lat/lon polygon grid and interpolate city rainfall onto it.
 
-    Key design points:
-    - no density-map red target rings;
-    - same number/order of points in every frame, so Plotly can update marker colors
-      instead of destroying/recreating the map layer;
-    - deterministic sunflower offsets, so the cloud does not jitter between frames.
+    This replaces the old circular marker/density approach. The output is a real
+    raster-like paint layer made of small transparent grid cells, so the map looks
+    colored/painted instead of covered by target circles.
     """
-    if input_df.empty:
-        return pd.DataFrame(columns=list(input_df.columns) + ["_vis_lat", "_vis_lon", "_vis_value", "_paint_id"])
+    if city_df.empty:
+        return None, None, None
 
-    base = input_df.copy()
-    base[value_col] = pd.to_numeric(base[value_col], errors="coerce").fillna(0.0)
+    min_lat, max_lat = float(city_df["_lat"].min()), float(city_df["_lat"].max())
+    min_lon, max_lon = float(city_df["_lon"].min()), float(city_df["_lon"].max())
 
-    periods = base[["animation_period", "period_order"]].drop_duplicates().sort_values("period_order")
-    city_cols = ["city", "state", "_lat", "_lon"]
-    cities = base[city_cols].drop_duplicates("city").sort_values("city").reset_index(drop=True)
+    # Add enough padding so the paint can extend around cities without huge circles.
+    if max_lat - min_lat < 0.6:
+        mid = (min_lat + max_lat) / 2
+        min_lat, max_lat = mid - 0.35, mid + 0.35
+    if max_lon - min_lon < 0.6:
+        mid = (min_lon + max_lon) / 2
+        min_lon, max_lon = mid - 0.35, mid + 0.35
 
-    # Fill missing city-period combinations with zero. This keeps frame arrays stable.
-    full = periods.assign(_k=1).merge(cities.assign(_k=1), on="_k").drop(columns="_k")
-    values = base[["animation_period", "city", value_col, "rainfall"]].copy()
-    full = full.merge(values, on=["animation_period", "city"], how="left")
-    full[value_col] = full[value_col].fillna(0.0)
-    full["rainfall"] = full["rainfall"].fillna(0.0)
+    min_lat -= padding
+    max_lat += padding
+    min_lon -= padding
+    max_lon += padding
 
-    n = int(max(13, min(samples_per_city, 49)))
-    golden = np.pi * (3.0 - np.sqrt(5.0))
-    offsets = [(0.0, 0.0, 1.0, 0)]
-    for i in range(1, n):
-        # sqrt radial distribution fills a disk instead of drawing an outline ring.
-        radius = np.sqrt(i / max(1, n - 1)) * spread_deg
-        theta = i * golden
-        weight = np.exp(-2.25 * (radius / max(spread_deg, 1e-6)) ** 2)
-        offsets.append((radius * np.sin(theta), radius * np.cos(theta), float(weight), i))
+    lat_edges = np.linspace(min_lat, max_lat, ny + 1)
+    lon_edges = np.linspace(min_lon, max_lon, nx + 1)
+    lat_centers = (lat_edges[:-1] + lat_edges[1:]) / 2
+    lon_centers = (lon_edges[:-1] + lon_edges[1:]) / 2
 
-    rows = []
-    for _, row in full.iterrows():
-        lat = float(row["_lat"])
-        lon = float(row["_lon"])
-        val = float(row[value_col])
-        lon_correction = max(0.35, np.cos(np.deg2rad(lat)))
-        for dlat, dlon, weight, sample_id in offsets:
-            r = row.copy()
-            r["_vis_lat"] = lat + dlat
-            r["_vis_lon"] = lon + dlon / lon_correction
-            r["_vis_value"] = val * weight
-            r["_paint_id"] = f"{row['city']}::{sample_id:02d}"
-            rows.append(r)
+    features = []
+    centers = []
+    cell_id = 0
+    for iy in range(ny):
+        for ix in range(nx):
+            west, east = float(lon_edges[ix]), float(lon_edges[ix + 1])
+            south, north = float(lat_edges[iy]), float(lat_edges[iy + 1])
+            features.append({
+                "type": "Feature",
+                "id": str(cell_id),
+                "properties": {"cell_id": str(cell_id)},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [west, south], [east, south], [east, north], [west, north], [west, south]
+                    ]],
+                },
+            })
+            centers.append((float(lat_centers[iy]), float(lon_centers[ix])))
+            cell_id += 1
 
-    return pd.DataFrame(rows).sort_values(["period_order", "city", "_paint_id"]).reset_index(drop=True)
+    geojson = {"type": "FeatureCollection", "features": features}
+    centers = np.asarray(centers, dtype=float)
+
+    city_points = city_df[["_lat", "_lon"]].drop_duplicates().to_numpy(dtype=float)
+    if len(city_points) == 0:
+        return geojson, centers, None
+
+    # Precompute IDW weights from each grid cell to each city. This is the key speed fix:
+    # frames only need a matrix multiplication, not repeated interpolation.
+    lat_scale = 111.0
+    lon_scale = 111.0 * max(0.35, float(np.cos(np.deg2rad(city_points[:, 0].mean()))))
+    dlat = (centers[:, [0]] - city_points[:, 0][None, :]) * lat_scale
+    dlon = (centers[:, [1]] - city_points[:, 1][None, :]) * lon_scale
+    dist_km = np.sqrt(dlat ** 2 + dlon ** 2)
+    cutoff_km = cutoff_deg * 111.0
+
+    # Smoothly fade out far-away influence instead of coloring the whole sea/map.
+    weights = 1.0 / np.power(dist_km + 8.0, influence_power)
+    fade = np.clip(1.0 - (dist_km / max(cutoff_km, 1.0)), 0.0, 1.0) ** 1.7
+    weights = weights * fade
+    weight_sum = weights.sum(axis=1, keepdims=True)
+    weights = np.divide(weights, weight_sum, out=np.zeros_like(weights), where=weight_sum > 1e-12)
+
+    return geojson, centers, weights
+
+
+def make_grid_z_for_period(frame_city_df, all_cities, weights, raw_cap):
+    """Return one z array for the polygon paint grid for a single animation frame."""
+    values = (
+        frame_city_df.set_index("city")["rainfall"]
+        .reindex(all_cities)
+        .fillna(0.0)
+        .to_numpy(dtype=float)
+    )
+    values = np.clip(values, 0, raw_cap)
+    scaled = np.log1p(values) / np.log1p(max(raw_cap, 1.0)) * 100.0
+    scaled[(values > 0) & (scaled < 10)] = 10
+    z = weights @ scaled
+    # Drop very faint pixels so the map has cloud patches, not a full colored rectangle.
+    z[z < 3.0] = 0.0
+    return z
 
 
 # =========================================================
@@ -1523,8 +1575,7 @@ if chart_mode == "Heatmap Animation":
     st.markdown(
         """
         <div class="glass-caption">
-            Smooth paint-layer heatmap: this version avoids target-circle blobs and updates marker colors in place,
-            so dragging the timeline feels smoother and the base map does not flash as aggressively.
+            Raster paint-layer heatmap: the rainfall layer is interpolated onto small map cells, so it appears as a colored weather layer instead of circular city markers.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1538,13 +1589,17 @@ if chart_mode == "Heatmap Animation":
             "Add latitude/longitude columns to the CSV or select supported Malaysian cities."
         )
     else:
-        map_style_options_runtime = dict(MAP_STYLE_OPTIONS)
+        map_style_options_runtime = {
+            "Clean Apple-like light map (recommended)": "carto-positron",
+            "OpenStreetMap Standard": "open-street-map",
+            "Dark map": "carto-darkmatter",
+        }
         mapbox_token = get_mapbox_token()
         if mapbox_token:
             px.set_mapbox_access_token(mapbox_token)
             map_style_options_runtime.update({
-                "Mapbox Streets API (token)": "streets",
                 "Mapbox Light API (token)": "light",
+                "Mapbox Streets API (token)": "streets",
                 "Mapbox Satellite Streets API (token)": "satellite-streets",
             })
 
@@ -1552,58 +1607,46 @@ if chart_mode == "Heatmap Animation":
             "Map tile layer",
             list(map_style_options_runtime.keys()),
             index=0,
-            help="OpenStreetMap is the safest no-token option. Add MAPBOX_TOKEN in Streamlit secrets for Mapbox API styles.",
+            help="The clean light map is intentionally less complex, closer to the Apple Weather visual style.",
         )
         map_style = map_style_options_runtime[map_style_label]
 
-        paint_marker_size = st.sidebar.slider(
-            "Paint layer softness",
-            min_value=10,
-            max_value=24,
-            value=15,
-            step=1,
-            help="Lower = sharper local paint. Higher = smoother paint. This is not a target-circle radius.",
+        grid_quality = st.sidebar.slider(
+            "Paint layer detail",
+            min_value=28,
+            max_value=70,
+            value=48,
+            step=2,
+            help="Higher = smoother paint but heavier. 44–54 is a good balance for Streamlit Cloud.",
         )
-        field_spread = st.sidebar.slider(
+        influence_spread = st.sidebar.slider(
             "Paint layer spread",
-            min_value=3,
-            max_value=10,
-            value=5,
-            step=1,
-            help="Controls how far the soft paint extends around each city. Keep this small to avoid ugly giant blobs.",
+            min_value=45,
+            max_value=160,
+            value=95,
+            step=5,
+            help="Controls how far each city influences nearby map cells. This is grid interpolation, not circular markers.",
         ) / 100.0
-        paint_samples = st.sidebar.slider(
-            "Paint smoothness samples",
-            min_value=13,
-            max_value=37,
-            value=25,
-            step=4,
-            help="More samples make the layer smoother but heavier. 21–29 is a good balance.",
-        )
         heat_opacity = st.sidebar.slider(
             "Heatmap opacity",
-            min_value=45,
+            min_value=40,
             max_value=88,
-            value=70,
-            step=3,
-            help="Controls how strongly the rainfall paint layer covers the map.",
+            value=68,
+            step=2,
+            help="Controls how strongly the rainfall paint layer covers the base map.",
         ) / 100
-
         smooth_transition = st.sidebar.slider(
             "Heatmap transition smoothness",
-            min_value=80,
-            max_value=650,
-            value=320,
+            min_value=120,
+            max_value=900,
+            value=520,
             step=20,
-            help="Higher values create smoother interpolation when dragging the timeline. Because this version updates marker colors in place, it can be smoother without full map redraw.",
+            help="Higher values make frame-to-frame color transitions smoother.",
         )
 
         heat_anim = map_ready[map_ready["year"] >= animation_start_year].copy()
         heat_anim = build_animation_period_columns(heat_anim, aggregation_level)
 
-        # For a visual rainfall layer, daily mode should not average rainfall away too much.
-        # We still respect the selected rainfall variable, but the final display is log-scaled
-        # so small but non-zero rainfall remains visible.
         heat_group = heat_anim.groupby(
             ["animation_period", "period_order", "city", "state", "_lat", "_lon"],
             as_index=False,
@@ -1619,12 +1662,11 @@ if chart_mode == "Heatmap Animation":
             unique_periods = heat_group[["animation_period", "period_order"]].drop_duplicates().sort_values("period_order")
             original_frame_count = len(unique_periods)
 
-            # Plotly map animations become sluggish when thousands of frames are pushed to the browser.
-            # This keeps the UI responsive while still showing a clear time evolution.
+            # Keep animation responsive. The visual layer is now grid-based, so each frame is heavier than a simple point layer.
             if aggregation_level == "Daily":
-                max_frames = 80
+                max_frames = 90
             elif aggregation_level == "Monthly":
-                max_frames = 150
+                max_frames = 180
             else:
                 max_frames = 360
 
@@ -1634,97 +1676,114 @@ if chart_mode == "Heatmap Animation":
                 heat_group = heat_group[heat_group["animation_period"].isin(keep_periods)].copy()
                 unique_periods = heat_group[["animation_period", "period_order"]].drop_duplicates().sort_values("period_order")
                 st.info(
-                    f"{aggregation_level} mode has {original_frame_count:,} frames. To stop the browser from freezing, "
-                    f"this map renders every {stride}th frame. Narrow the year range for denser animation detail."
+                    f"{aggregation_level} mode has {original_frame_count:,} frames. To keep the browser smooth, "
+                    f"this map renders every {stride}th frame. Narrow the year range for full daily detail."
                 )
 
-            # Log scaling makes real differences visible. Without this, daily avg rainfall often looks blank
-            # because most city-day values are near zero compared with a few high-rainfall days.
             raw_cap = float(heat_group["rainfall"].quantile(0.985))
             raw_cap = max(1.0, raw_cap)
-            heat_group["rainfall_scaled"] = np.log1p(heat_group["rainfall"].clip(lower=0, upper=raw_cap)) / np.log1p(raw_cap) * 100.0
-            heat_group.loc[(heat_group["rainfall"] > 0) & (heat_group["rainfall_scaled"] < 8), "rainfall_scaled"] = 8
 
-            # Build a stable soft paint field. Same point order across frames = smoother slider transition.
-            visual_field = build_soft_paint_precipitation_field(
-                heat_group,
-                value_col="rainfall_scaled",
-                spread_deg=field_spread,
-                samples_per_city=paint_samples,
+            # Grid size: nx follows the selected detail, ny keeps the Malaysia map aspect manageable.
+            nx = int(grid_quality)
+            ny = int(max(18, round(grid_quality * 0.58)))
+
+            city_base = heat_group[["city", "state", "_lat", "_lon"]].drop_duplicates("city").sort_values("city")
+            all_cities = city_base["city"].tolist()
+            geojson, grid_centers, weights = build_regular_precipitation_grid(
+                city_base,
+                nx=nx,
+                ny=ny,
+                padding=0.48,
+                influence_power=2.15,
+                cutoff_deg=influence_spread,
             )
 
-            if visual_field.empty:
-                st.warning("The selected period has no positive rainfall values, so no precipitation layer is visible. Try a wider date range or max_rainfall_mm.")
+            if geojson is None or weights is None:
+                st.warning("Unable to build the map paint grid for the selected cities.")
             else:
-                center_lat = float(heat_group["_lat"].mean())
-                center_lon = float(heat_group["_lon"].mean())
-                lat_span = float(heat_group["_lat"].max() - heat_group["_lat"].min())
-                lon_span = float(heat_group["_lon"].max() - heat_group["_lon"].min())
+                feature_ids = [f["id"] for f in geojson["features"]]
+
+                center_lat = float(city_base["_lat"].mean())
+                center_lon = float(city_base["_lon"].mean())
+                lat_span = float(city_base["_lat"].max() - city_base["_lat"].min())
+                lon_span = float(city_base["_lon"].max() - city_base["_lon"].min())
                 max_span = max(lat_span, lon_span)
                 if max_span > 8:
-                    zoom_level = 4.35
+                    zoom_level = 4.25
                 elif max_span > 5:
                     zoom_level = 4.85
                 elif max_span > 2.5:
                     zoom_level = 5.55
                 else:
-                    zoom_level = 6.5
+                    zoom_level = 8.15
 
                 periods = unique_periods["animation_period"].tolist()
                 first_period = periods[0]
-                first_field = visual_field[visual_field["animation_period"] == first_period]
+                first_city_frame = heat_group[heat_group["animation_period"] == first_period]
+                first_z = make_grid_z_for_period(first_city_frame, all_cities, weights, raw_cap)
 
-                marker_colorbar = dict(
+                # Use no red/orange at all. This is close to the reference: transparent/white -> blue -> purple -> yellow.
+                raster_colorscale = [
+                    [0.00, "rgba(255,255,255,0.00)"],
+                    [0.05, "rgba(255,255,255,0.00)"],
+                    [0.18, "rgba(74,185,255,0.38)"],
+                    [0.36, "rgba(29,136,255,0.64)"],
+                    [0.58, "rgba(165,96,244,0.72)"],
+                    [0.76, "rgba(238,86,226,0.76)"],
+                    [0.90, "rgba(255,226,64,0.82)"],
+                    [1.00, "rgba(255,255,216,0.90)"],
+                ]
+
+                colorbar = dict(
                     title=dict(text="Precipitation", font=dict(color="#F8FAFC", size=13)),
                     tickmode="array",
-                    tickvals=[8, 38, 68, 94],
+                    tickvals=[12, 38, 68, 92],
                     ticktext=["Light", "Moderate", "Heavy", "Extreme"],
                     tickfont=dict(color="#F8FAFC", size=12),
-                    len=0.40,
-                    thickness=16,
+                    len=0.38,
+                    thickness=15,
                     x=0.965,
                     y=0.53,
-                    bgcolor="rgba(15,23,42,0.72)",
-                    bordercolor="rgba(255,255,255,0.32)",
+                    bgcolor="rgba(15,23,42,0.62)",
+                    bordercolor="rgba(255,255,255,0.28)",
                     borderwidth=1,
                 )
 
-                def _paint_trace(frame_df, show_scale=True):
-                    frame_df = frame_df.sort_values(["city", "_paint_id"]).reset_index(drop=True)
-                    return go.Scattermapbox(
-                        lat=frame_df["_vis_lat"],
-                        lon=frame_df["_vis_lon"],
-                        mode="markers",
-                        customdata=np.stack([
-                            frame_df["city"].astype(str),
-                            frame_df["state"].astype(str),
-                            frame_df["rainfall"].astype(float),
-                            frame_df["animation_period"].astype(str),
-                        ], axis=-1),
-                        marker=dict(
-                            size=paint_marker_size,
-                            color=frame_df["_vis_value"],
-                            cmin=0,
-                            cmax=100,
-                            colorscale=PRECIPITATION_COLORSCALE,
-                            opacity=heat_opacity,
-                            showscale=show_scale,
-                            colorbar=marker_colorbar if show_scale else None,
-                        ),
-                        hovertemplate=(
-                            "<b>%{customdata[0]}</b><br>"
-                            "State: %{customdata[1]}<br>"
-                            "Rainfall: %{customdata[2]:.2f} mm<br>"
-                            "Frame: %{customdata[3]}<extra></extra>"
-                        ),
+                def _grid_trace(z_values, show_scale=True):
+                    return go.Choroplethmapbox(
+                        geojson=geojson,
+                        locations=feature_ids,
+                        z=z_values,
+                        featureidkey="id",
+                        zmin=0,
+                        zmax=100,
+                        colorscale=raster_colorscale,
+                        marker=dict(line=dict(width=0), opacity=heat_opacity),
+                        showscale=show_scale,
+                        colorbar=colorbar if show_scale else None,
+                        hoverinfo="skip",
                     )
 
                 frames = []
                 for period in periods:
-                    frame_df = visual_field[visual_field["animation_period"] == period]
-                    frames.append(go.Frame(name=str(period), data=[_paint_trace(frame_df, show_scale=True)]))
+                    frame_city_df = heat_group[heat_group["animation_period"] == period]
+                    z_values = make_grid_z_for_period(frame_city_df, all_cities, weights, raw_cap)
+                    frames.append(go.Frame(name=str(period), data=[_grid_trace(z_values, show_scale=True)]))
 
-                fig_heatmap_anim = go.Figure(data=[_paint_trace(first_field, show_scale=True)], frames=frames)
+                fig_heatmap_anim = go.Figure(data=[_grid_trace(first_z, show_scale=True)], frames=frames)
+
+                # Optional city labels only. No city markers, no red circles.
+                fig_heatmap_anim.add_trace(
+                    go.Scattermapbox(
+                        lat=city_base["_lat"],
+                        lon=city_base["_lon"],
+                        mode="text",
+                        text=city_base["city"],
+                        textfont=dict(size=12, color="rgba(10,20,35,0.82)"),
+                        hoverinfo="skip",
+                        showlegend=False,
+                    )
+                )
 
                 fig_heatmap_anim.update_layout(
                     height=760,
@@ -1756,8 +1815,8 @@ if chart_mode == "Heatmap Animation":
                             yanchor="top",
                             pad=dict(r=12, t=12, b=12, l=12),
                             active=-1,
-                            bgcolor="rgba(238,244,255,0.12)",
-                            bordercolor="rgba(255,255,255,0.32)",
+                            bgcolor="rgba(238,244,255,0.08)",
+                            bordercolor="rgba(255,255,255,0.22)",
                             borderwidth=1,
                             font=dict(color="#FFFFFF", size=14),
                             buttons=[
@@ -1791,8 +1850,8 @@ if chart_mode == "Heatmap Animation":
                             yanchor="top",
                             pad=dict(r=12, t=12, b=12, l=12),
                             active=-1,
-                            bgcolor="rgba(238,244,255,0.12)",
-                            bordercolor="rgba(255,255,255,0.32)",
+                            bgcolor="rgba(238,244,255,0.08)",
+                            bordercolor="rgba(255,255,255,0.22)",
                             borderwidth=1,
                             font=dict(color="#FFFFFF", size=14),
                             buttons=[
@@ -1811,8 +1870,8 @@ if chart_mode == "Heatmap Animation":
                             xanchor="left",
                             yanchor="top",
                             pad=dict(t=36, b=12),
-                            bgcolor="rgba(238,244,255,0.16)",
-                            bordercolor="rgba(255,255,255,0.38)",
+                            bgcolor="rgba(238,244,255,0.10)",
+                            bordercolor="rgba(255,255,255,0.28)",
                             borderwidth=1,
                             font=dict(color="#F8FAFC", size=10),
                             currentvalue=dict(
@@ -1842,10 +1901,10 @@ if chart_mode == "Heatmap Animation":
                 with st.expander("Map implementation note", expanded=False):
                     st.markdown(
                         """
-                        - The heatmap now uses a soft paint-layer marker field, not Plotly density rings, so it should not show the ugly target-circle effect.
-                        - Frames keep the same point order and update marker colors in place. This reduces map flashing and makes timeline dragging smoother.
-                        - Daily mode is still frame-limited for browser performance. For full daily detail, narrow the year range first.
-                        - This is a city-level CHIRPS visual layer, not official real-time radar.
+                        - This version removes circular markers entirely. The rainfall layer is a small-cell interpolated paint raster.
+                        - Dragging the Plotly timeline updates the same grid layer rather than adding city circles.
+                        - The base map defaults to a cleaner light tile style to reduce visual clutter, closer to the Apple Weather reference.
+                        - This is still city-level CHIRPS interpolation, not official radar imagery.
                         """
                     )
 
