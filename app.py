@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -126,6 +127,145 @@ st.markdown(
             max-width: 100% !important;
         }
     }
+
+
+    /* =====================================================
+       iOS 26 / Liquid Glass inspired UI skin
+       ===================================================== */
+    :root {
+        --glass-bg: rgba(255, 255, 255, 0.58);
+        --glass-bg-strong: rgba(255, 255, 255, 0.74);
+        --glass-border: rgba(255, 255, 255, 0.62);
+        --glass-shadow: 0 18px 48px rgba(31, 38, 135, 0.18);
+        --glass-inner: inset 0 1px 0 rgba(255,255,255,0.80), inset 0 -1px 0 rgba(255,255,255,0.24);
+        --ios-red: #ff4d57;
+        --ios-blue: #2f9bff;
+        --ios-purple: #d45af3;
+        --ios-yellow: #fff02e;
+    }
+
+    html, body, .stApp {
+        background:
+            radial-gradient(circle at 18% 10%, rgba(67, 169, 255, 0.22), transparent 30%),
+            radial-gradient(circle at 88% 2%, rgba(255, 83, 201, 0.16), transparent 28%),
+            linear-gradient(135deg, #f7fbff 0%, #eef4fb 46%, #f8fbff 100%) !important;
+    }
+
+    .main, [data-testid="stAppViewContainer"] {
+        background: transparent !important;
+    }
+
+    section[data-testid="stSidebar"] {
+        background: rgba(20, 22, 32, 0.72) !important;
+        backdrop-filter: blur(28px) saturate(170%);
+        -webkit-backdrop-filter: blur(28px) saturate(170%);
+        border-right: 1px solid rgba(255,255,255,0.12);
+    }
+
+    section[data-testid="stSidebar"] * {
+        color: rgba(255,255,255,0.94);
+    }
+
+    div[data-testid="stSidebarContent"] {
+        background:
+            radial-gradient(circle at 20% 0%, rgba(80, 180, 255, 0.18), transparent 24%),
+            radial-gradient(circle at 95% 28%, rgba(255, 75, 190, 0.13), transparent 26%);
+    }
+
+    .metric-card,
+    div[data-testid="stMetric"],
+    div[data-testid="stAlert"],
+    div[data-testid="stDataFrame"],
+    div[data-testid="stVerticalBlock"] > div:has(.js-plotly-plot) {
+        background: var(--glass-bg) !important;
+        border: 1px solid var(--glass-border) !important;
+        border-radius: 24px !important;
+        box-shadow: var(--glass-shadow), var(--glass-inner) !important;
+        backdrop-filter: blur(24px) saturate(180%) !important;
+        -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+    }
+
+    div[data-testid="stVerticalBlock"] > div:has(.js-plotly-plot) {
+        padding: 14px 14px 6px 14px;
+    }
+
+    div[data-testid="stMetric"] label,
+    div[data-testid="stMetric"] div {
+        color: rgba(255,255,255,0.96) !important;
+        text-shadow: 0 1px 10px rgba(0,0,0,0.20);
+    }
+
+    div[data-testid="stMetric"] {
+        background:
+            linear-gradient(135deg, rgba(255,255,255,0.34), rgba(255,255,255,0.12)),
+            radial-gradient(circle at 0% 0%, rgba(255,255,255,0.44), transparent 45%) !important;
+    }
+
+    .stButton > button,
+    div[data-testid="stDownloadButton"] > button,
+    div[data-testid="stFormSubmitButton"] > button,
+    button[kind="primary"],
+    button[kind="secondary"] {
+        border: 1px solid rgba(255,255,255,0.62) !important;
+        border-radius: 999px !important;
+        background:
+            linear-gradient(135deg, rgba(255,255,255,0.78), rgba(255,255,255,0.32)),
+            radial-gradient(circle at 20% 15%, rgba(255,255,255,0.92), transparent 35%) !important;
+        color: #111827 !important;
+        box-shadow: 0 14px 36px rgba(31,38,135,0.18), inset 0 1px 0 rgba(255,255,255,0.85) !important;
+        backdrop-filter: blur(22px) saturate(180%) !important;
+        -webkit-backdrop-filter: blur(22px) saturate(180%) !important;
+        transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease !important;
+        font-weight: 750 !important;
+    }
+
+    .stButton > button:hover,
+    div[data-testid="stDownloadButton"] > button:hover,
+    button[kind="primary"]:hover,
+    button[kind="secondary"]:hover {
+        transform: translateY(-1px) scale(1.015);
+        box-shadow: 0 18px 44px rgba(31,38,135,0.24), inset 0 1px 0 rgba(255,255,255,0.95) !important;
+    }
+
+    div[data-baseweb="select"] > div,
+    div[data-baseweb="base-input"] > div,
+    div[data-testid="stMultiSelect"] [data-baseweb="select"] > div,
+    div[data-testid="stSlider"] [role="slider"] {
+        border-radius: 18px !important;
+        background: rgba(255,255,255,0.10) !important;
+        border: 1px solid rgba(255,255,255,0.18) !important;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.18) !important;
+    }
+
+    div[data-testid="stMultiSelect"] [data-baseweb="tag"] {
+        background: rgba(255, 77, 87, 0.92) !important;
+        border-radius: 10px !important;
+        box-shadow: 0 8px 24px rgba(255,77,87,0.24) !important;
+    }
+
+    [data-testid="stRadio"] label,
+    [data-testid="stCheckbox"] label {
+        border-radius: 999px;
+    }
+
+    .js-plotly-plot .updatemenu-item-rect,
+    .js-plotly-plot .slider-container .slider-bg {
+        fill: rgba(255,255,255,0.62) !important;
+        stroke: rgba(255,255,255,0.78) !important;
+        filter: drop-shadow(0 10px 22px rgba(31,38,135,0.18));
+    }
+
+    .glass-caption {
+        padding: 14px 18px;
+        border-radius: 22px;
+        background: rgba(255,255,255,0.58);
+        border: 1px solid rgba(255,255,255,0.65);
+        box-shadow: 0 16px 42px rgba(31,38,135,0.16), inset 0 1px 0 rgba(255,255,255,0.75);
+        backdrop-filter: blur(24px) saturate(180%);
+        -webkit-backdrop-filter: blur(24px) saturate(180%);
+        margin: 8px 0 16px 0;
+    }
+
     </style>
     """,
     unsafe_allow_html=True,
@@ -188,6 +328,80 @@ def render_plotly(fig):
         ),
     )
     st.plotly_chart(fig, width="stretch", config=PLOTLY_CONFIG)
+
+
+# Apple Weather-like precipitation colors: transparent/white -> blue -> purple/pink -> yellow -> white.
+PRECIPITATION_COLORSCALE = [
+    [0.00, "rgba(255,255,255,0.00)"],
+    [0.10, "rgba(47,155,255,0.35)"],
+    [0.28, "#2f9bff"],
+    [0.48, "#64d8ff"],
+    [0.66, "#d45af3"],
+    [0.82, "#ff5bc8"],
+    [0.94, "#fff02e"],
+    [1.00, "#ffffff"],
+]
+
+MALAYSIA_CITY_COORDS = {
+    "Kuala Lumpur": (3.1390, 101.6869), "Putrajaya": (2.9264, 101.6964),
+    "Shah Alam": (3.0738, 101.5183), "Klang": (3.0449, 101.4456),
+    "Petaling Jaya": (3.1073, 101.6067), "Seremban": (2.7258, 101.9378),
+    "Melaka": (2.1896, 102.2501), "Malacca": (2.1896, 102.2501),
+    "Johor Bahru": (1.4927, 103.7414), "Kuantan": (3.8077, 103.3260),
+    "Kota Bharu": (6.1254, 102.2381), "Kuala Terengganu": (5.3296, 103.1370),
+    "Alor Setar": (6.1248, 100.3678), "George Town": (5.4141, 100.3288),
+    "Sungai Petani": (5.6436, 100.4894), "Taiping": (4.8519, 100.7416),
+    "Ipoh": (4.5975, 101.0901), "Kuching": (1.5533, 110.3592),
+    "Sibu": (2.2876, 111.8305), "Miri": (4.3995, 113.9914),
+    "Bintulu": (3.1713, 113.0419), "Kota Kinabalu": (5.9804, 116.0735),
+    "Sandakan": (5.8394, 118.1172), "Tawau": (4.2447, 117.8912),
+    "Labuan": (5.2831, 115.2308), "Kangar": (6.4449, 100.2048),
+}
+
+
+def detect_lat_lon_columns(input_df):
+    lat_candidates = ["lat", "latitude", "Latitude", "LAT", "y"]
+    lon_candidates = ["lon", "lng", "longitude", "Longitude", "LON", "LONG", "x"]
+    lat_col = next((c for c in lat_candidates if c in input_df.columns), None)
+    lon_col = next((c for c in lon_candidates if c in input_df.columns), None)
+    return lat_col, lon_col
+
+
+def add_city_coordinates(input_df):
+    """Use dataset coordinates when available, otherwise fall back to known Malaysia city coordinates."""
+    out = input_df.copy()
+    lat_col, lon_col = detect_lat_lon_columns(out)
+
+    if lat_col and lon_col:
+        out["_lat"] = pd.to_numeric(out[lat_col], errors="coerce")
+        out["_lon"] = pd.to_numeric(out[lon_col], errors="coerce")
+    else:
+        out["_lat"] = np.nan
+        out["_lon"] = np.nan
+
+    missing_mask = out["_lat"].isna() | out["_lon"].isna()
+    if missing_mask.any():
+        coords = out.loc[missing_mask, "city"].map(MALAYSIA_CITY_COORDS)
+        out.loc[missing_mask, "_lat"] = coords.map(lambda v: v[0] if isinstance(v, tuple) else np.nan)
+        out.loc[missing_mask, "_lon"] = coords.map(lambda v: v[1] if isinstance(v, tuple) else np.nan)
+
+    return out.dropna(subset=["_lat", "_lon"])
+
+
+def build_animation_period_columns(input_df, agg_level):
+    out = input_df.copy()
+    if agg_level == "Yearly":
+        out["animation_period"] = out["year"].astype(int).astype(str)
+        out["period_order"] = out["year"].astype(int)
+    elif agg_level == "Monthly":
+        out["period_dt"] = out["date"].dt.to_period("M").dt.to_timestamp()
+        out["animation_period"] = out["period_dt"].dt.strftime("%Y-%m")
+        out["period_order"] = out["period_dt"]
+    else:
+        out["period_dt"] = out["date"].dt.normalize()
+        out["animation_period"] = out["period_dt"].dt.strftime("%Y-%m-%d")
+        out["period_order"] = out["period_dt"]
+    return out
 
 
 # =========================================================
@@ -314,7 +528,7 @@ else:
 # =========================================================
 chart_mode = st.sidebar.radio(
     "Chart mode",
-    ["Static Trend", "Animated Timeline"],
+    ["Static Trend", "Animated Timeline", "Heatmap Animation"],
     index=0,
 )
 
@@ -332,7 +546,7 @@ show_raw_data = st.sidebar.checkbox(
 # =========================================================
 # 9) Animation start control
 # =========================================================
-if chart_mode == "Animated Timeline":
+if chart_mode in ["Animated Timeline", "Heatmap Animation"]:
     if single_year_mode:
         animation_start_year = selected_year_range[0]
 
@@ -487,7 +701,7 @@ if chart_mode == "Static Trend":
 # =========================================================
 # 15) Animated timeline chart
 # =========================================================
-else:
+elif chart_mode == "Animated Timeline":
     st.info(
         "Animated Timeline mode shows how rainfall changes over time. "
         "Use the play button inside the chart to animate from the selected start point."
@@ -948,6 +1162,156 @@ else:
         )
 
         render_plotly(fig_pie)
+
+
+
+# =========================================================
+# 15.4) Apple Weather-style animated precipitation heatmap
+# =========================================================
+if chart_mode == "Heatmap Animation":
+    st.subheader("Animated Rainfall Heatmap Map")
+    st.markdown(
+        """
+        <div class="glass-caption">
+            This mode mimics the Apple Weather precipitation layer: light rainfall is blue,
+            moderate rainfall moves into purple/pink, heavy rainfall becomes yellow, and the
+            strongest cells move toward white. The map frame follows your selected year/month/day
+            aggregation and selected cities.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    map_ready = add_city_coordinates(filtered)
+
+    if map_ready.empty:
+        st.warning(
+            "No latitude/longitude columns were found and the selected cities are not in the built-in coordinate fallback list. "
+            "Add latitude/longitude columns to the CSV or select supported Malaysian cities."
+        )
+    else:
+        heat_radius = st.sidebar.slider(
+            "Heatmap glow radius",
+            min_value=15,
+            max_value=70,
+            value=42,
+            step=5,
+            help="Larger values create a softer Apple Weather-style precipitation glow.",
+        )
+        heat_opacity = st.sidebar.slider(
+            "Heatmap opacity",
+            min_value=30,
+            max_value=95,
+            value=72,
+            step=5,
+            help="Controls how strongly the rainfall layer covers the map.",
+        ) / 100
+
+        heat_anim = map_ready[map_ready["year"] >= animation_start_year].copy()
+        heat_anim = build_animation_period_columns(heat_anim, aggregation_level)
+
+        heat_group = heat_anim.groupby(
+            ["animation_period", "period_order", "city", "state", "_lat", "_lon"],
+            as_index=False,
+        ).agg(
+            rainfall=(selected_rain_var, "mean"),
+            flood_risk_count=("Flood_Risk_Binary", "sum"),
+        )
+
+        heat_group = heat_group.sort_values(["period_order", "city"]).reset_index(drop=True)
+
+        if heat_group.empty:
+            st.warning("No heatmap animation data is available for the selected filters.")
+        else:
+            z_cap = float(heat_group["rainfall"].quantile(0.995))
+            z_cap = max(1.0, z_cap)
+            center_lat = float(heat_group["_lat"].mean())
+            center_lon = float(heat_group["_lon"].mean())
+            zoom_level = 5.0 if heat_group["state"].nunique() > 2 or heat_group["city"].nunique() > 6 else 6.2
+
+            fig_heatmap_anim = px.density_mapbox(
+                heat_group,
+                lat="_lat",
+                lon="_lon",
+                z="rainfall",
+                radius=heat_radius,
+                animation_frame="animation_period",
+                color_continuous_scale=PRECIPITATION_COLORSCALE,
+                range_color=[0, z_cap],
+                center={"lat": center_lat, "lon": center_lon},
+                zoom=zoom_level,
+                mapbox_style="carto-positron",
+                hover_name="city",
+                hover_data={
+                    "state": True,
+                    "rainfall": ":.2f",
+                    "flood_risk_count": True,
+                    "_lat": False,
+                    "_lon": False,
+                    "animation_period": True,
+                },
+                title=f"Animated {aggregation_level} Rainfall Heatmap: {selected_rain_var}",
+            )
+
+            fig_heatmap_anim.update_traces(opacity=heat_opacity)
+            fig_heatmap_anim.update_layout(
+                height=780,
+                margin=dict(l=0, r=0, t=70, b=110),
+                coloraxis_colorbar=dict(
+                    title="Precipitation",
+                    tickmode="array",
+                    tickvals=[0, z_cap * 0.33, z_cap * 0.66, z_cap],
+                    ticktext=["Light", "Moderate", "Heavy", "Extreme"],
+                    len=0.42,
+                    thickness=16,
+                    bgcolor="rgba(255,255,255,0.62)",
+                    bordercolor="rgba(255,255,255,0.72)",
+                    borderwidth=1,
+                ),
+                transition_duration=animation_speed,
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+            )
+
+            if fig_heatmap_anim.layout.updatemenus:
+                fig_heatmap_anim.layout.updatemenus[0].type = "buttons"
+                fig_heatmap_anim.layout.updatemenus[0].direction = "left"
+                fig_heatmap_anim.layout.updatemenus[0].x = 0.03
+                fig_heatmap_anim.layout.updatemenus[0].y = -0.08
+                fig_heatmap_anim.layout.updatemenus[0].xanchor = "left"
+                fig_heatmap_anim.layout.updatemenus[0].yanchor = "top"
+                fig_heatmap_anim.layout.updatemenus[0].pad = dict(r=10, t=10)
+                fig_heatmap_anim.layout.updatemenus[0].bgcolor = "rgba(255,255,255,0.62)"
+                fig_heatmap_anim.layout.updatemenus[0].bordercolor = "rgba(255,255,255,0.76)"
+                fig_heatmap_anim.layout.updatemenus[0].borderwidth = 1
+                if fig_heatmap_anim.layout.updatemenus[0].buttons:
+                    fig_heatmap_anim.layout.updatemenus[0].buttons[0].label = "▶ Start"
+                    fig_heatmap_anim.layout.updatemenus[0].buttons[0].args[1]["frame"]["duration"] = animation_speed
+                    fig_heatmap_anim.layout.updatemenus[0].buttons[0].args[1]["transition"]["duration"] = int(animation_speed * 0.6)
+                    if len(fig_heatmap_anim.layout.updatemenus[0].buttons) > 1:
+                        fig_heatmap_anim.layout.updatemenus[0].buttons[1].label = "Ⅱ Pause"
+
+            if fig_heatmap_anim.layout.sliders:
+                fig_heatmap_anim.layout.sliders[0].x = 0.18
+                fig_heatmap_anim.layout.sliders[0].y = -0.07
+                fig_heatmap_anim.layout.sliders[0].len = 0.76
+                fig_heatmap_anim.layout.sliders[0].bgcolor = "rgba(255,255,255,0.56)"
+                fig_heatmap_anim.layout.sliders[0].bordercolor = "rgba(255,255,255,0.72)"
+                fig_heatmap_anim.layout.sliders[0].borderwidth = 1
+                fig_heatmap_anim.layout.sliders[0].currentvalue = dict(
+                    prefix="Forecast frame = ",
+                    visible=True,
+                    font=dict(size=14, color="#111827"),
+                )
+
+            render_plotly(fig_heatmap_anim)
+
+            with st.expander("Precipitation color legend and implementation note", expanded=False):
+                st.write(
+                    "The heatmap uses a custom Apple Weather-inspired color scale: blue for light rainfall, "
+                    "purple/pink for moderate rainfall, yellow for heavy rainfall, and near-white for the strongest rainfall cells. "
+                    "The data remains your CHIRPS city-level rainfall data, so this is a rainfall-intensity visualization, not an official weather-radar product."
+                )
 
 
 # =========================================================
