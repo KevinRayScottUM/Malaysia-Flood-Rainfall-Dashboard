@@ -1543,7 +1543,7 @@ if chart_mode == "Heatmap Animation":
     st.markdown(
         """
         <div class="glass-caption">
-            Apple Weather-style precipitation field: rainfall is rendered as a smooth map layer instead of oversized city bubbles.
+            Apple Weather-style local precipitation patches: rainfall is rendered as fine, feathered particles around real city locations instead of a large rectangular overlay.
             Drag the timeline or press Start/Pause to watch the rainfall field evolve through time.
         </div>
         """,
@@ -1577,44 +1577,44 @@ if chart_mode == "Heatmap Animation":
         map_style = map_style_options_runtime[map_style_label]
 
         field_resolution = st.sidebar.slider(
-            "Heatmap field detail",
-            min_value=55,
-            max_value=115,
-            value=82,
+            "Rain texture detail",
+            min_value=36,
+            max_value=120,
+            value=66,
             step=3,
-            help="Higher detail makes the precipitation edge smoother. Use 80–100 for a refined Apple Weather-like layer.",
+            help="Controls how many fine rain particles are drawn around each city. Higher values look smoother but may be slower.",
         )
         field_spread = st.sidebar.slider(
-            "Heatmap spatial spread",
-            min_value=45,
-            max_value=220,
-            value=96,
-            step=5,
-            help="Controls how far rainfall influence spreads from each city. Lower values avoid the ugly long rectangle.",
+            "Rainfall influence radius",
+            min_value=22,
+            max_value=130,
+            value=58,
+            step=4,
+            help="Controls the local radius of each rainfall patch. Lower values keep rainfall accurate and prevent huge artificial blobs.",
         ) / 100.0
         heat_opacity = st.sidebar.slider(
-            "Heatmap opacity",
-            min_value=30,
-            max_value=84,
-            value=56,
+            "Rain layer opacity",
+            min_value=24,
+            max_value=76,
+            value=44,
             step=2,
-            help="Controls the softness of the rainfall veil. Lower values keep the map elegant and readable.",
+            help="Controls the visual strength of the rainfall layer. Lower values look more elegant and map-like.",
         ) / 100
         field_cell_size = st.sidebar.slider(
-            "Heatmap texture size",
-            min_value=6,
-            max_value=22,
-            value=10,
+            "Rain particle size",
+            min_value=4,
+            max_value=16,
+            value=7,
             step=1,
-            help="Controls the size of each soft field particle. Smaller values make the edge less blocky.",
+            help="Controls the size of each soft rain particle. Smaller values create a finer, less rough texture.",
         )
         edge_feather = st.sidebar.slider(
-            "Heatmap edge feather",
+            "Minimum visible rainfall",
             min_value=4,
-            max_value=28,
-            value=12,
+            max_value=34,
+            value=14,
             step=1,
-            help="Removes the rectangular canvas by clipping weak outer areas and feathering only the real rainfall influence zones.",
+            help="Hides very weak outer particles so the overlay stays precise instead of covering a large area.",
         ) / 100.0
 
         smooth_transition = st.sidebar.slider(
@@ -1675,11 +1675,11 @@ if chart_mode == "Heatmap Animation":
             heat_group.loc[(heat_group["rainfall"] > 0) & (heat_group["rainfall_scaled"] < 10), "rainfall_scaled"] = 10
 
             # Important design fix:
-            # Do NOT use Densitymapbox. It recomputes screen-space density after zoom/pan, which was
-            # the reason the same frame could suddenly turn blue or collapse into artificial helper dots.
-            # This version builds a fixed geographic interpolation field for every frame, then renders
-            # that field as many soft raster-like cells. The color is locked to rainfall intensity, so
-            # zooming does not recolor the same data.
+            # Do NOT use a full rectangular interpolation canvas or Plotly Densitymapbox.
+            # Both can over-paint huge areas and make city rainfall look geographically false.
+            # This version renders each city as a compact, feathered precipitation patch made
+            # from many tiny deterministic particles. The patch radius is controlled by rainfall
+            # intensity, so light rain stays local and only heavy rain earns a larger glow.
             positive_heat_group = heat_group[heat_group["rainfall"] > 0].copy()
 
             if positive_heat_group.empty:
@@ -1702,23 +1702,17 @@ if chart_mode == "Heatmap Animation":
                 periods = unique_periods["animation_period"].tolist()
                 first_period = periods[0]
 
-                # Build one fixed geographic canvas for all frames. This makes the rainfall layer
-                # feel attached to the map surface instead of floating as large city bubbles.
-                pad_lat = max(0.45, lat_span * 0.12)
-                pad_lon = max(0.45, lon_span * 0.12)
-                grid_lat = np.linspace(
-                    float(heat_group["_lat"].min()) - pad_lat,
-                    float(heat_group["_lat"].max()) + pad_lat,
-                    int(field_resolution),
-                )
-                grid_lon = np.linspace(
-                    float(heat_group["_lon"].min()) - pad_lon,
-                    float(heat_group["_lon"].max()) + pad_lon,
-                    int(field_resolution),
-                )
-                grid_lon_mesh, grid_lat_mesh = np.meshgrid(grid_lon, grid_lat)
-                grid_lat_flat = grid_lat_mesh.ravel()
-                grid_lon_flat = grid_lon_mesh.ravel()
+                # Build a deterministic fine-particle stencil once.
+                # This replaces the previous rectangular raster grid. It makes the rainfall
+                # layer feel like small soft weather patches attached to real city locations.
+                particle_count = int(field_resolution)
+                golden_angle = np.pi * (3.0 - np.sqrt(5.0))
+                particle_idx = np.arange(max(12, particle_count), dtype=float)
+                particle_r = np.sqrt((particle_idx + 0.5) / max(1.0, len(particle_idx)))
+                particle_theta = particle_idx * golden_angle
+                particle_x = particle_r * np.cos(particle_theta)
+                particle_y = particle_r * np.sin(particle_theta)
+                particle_weight = np.exp(-2.85 * particle_r * particle_r)
 
                 colorbar = dict(
                     title=dict(text="Precipitation", font=dict(color="#F8FAFC", size=13)),
@@ -1743,59 +1737,105 @@ if chart_mode == "Heatmap Animation":
                             marker=dict(size=field_cell_size, color=[], colorscale=PRECIPITATION_COLORSCALE, cmin=0, cmax=100, opacity=heat_opacity, colorbar=colorbar),
                             hoverinfo="skip", showlegend=False,
                         )
-                        return [empty_trace, empty_trace]
+                        return [empty_trace, empty_trace, empty_trace]
 
-                    src_lat = frame_df["_lat"].astype(float).to_numpy()
-                    src_lon = frame_df["_lon"].astype(float).to_numpy()
-                    src_val = frame_df["rainfall_scaled"].astype(float).to_numpy()
+                    mist_lat, mist_lon, mist_val, mist_text = [], [], [], []
+                    rain_lat, rain_lon, rain_val, rain_text = [], [], [], []
+                    core_lat, core_lon, core_val = [], [], []
 
-                    # Approximate degree distance with longitude correction for Malaysia latitudes.
-                    lat0 = np.nanmean(src_lat)
-                    lon_scale = max(0.35, np.cos(np.deg2rad(lat0)))
-                    dlat = grid_lat_flat[:, None] - src_lat[None, :]
-                    dlon = (grid_lon_flat[:, None] - src_lon[None, :]) * lon_scale
-                    dist2 = dlat * dlat + dlon * dlon
+                    # Percentile threshold prevents very low rain from creating ugly oversized areas.
+                    # The small floor still allows genuine drizzle to appear as a tiny blue mist.
+                    visible_floor = max(8.0, edge_feather * 100.0)
 
-                    # Gaussian interpolation creates a stable soft precipitation sheet.
-                    sigma = max(0.18, float(field_spread))
-                    weights = np.exp(-dist2 / (2.0 * sigma * sigma))
-                    weight_sum = weights.sum(axis=1)
-                    interpolated = (weights @ src_val) / np.maximum(weight_sum, 1e-9)
+                    for _, row in frame_df.iterrows():
+                        lat = float(row["_lat"])
+                        lon = float(row["_lon"])
+                        scaled = float(row["rainfall_scaled"])
+                        rain_mm = float(row["rainfall"])
+                        if not np.isfinite(lat) or not np.isfinite(lon) or not np.isfinite(scaled):
+                            continue
 
-                    # Design fix for the ugly rectangle:
-                    # Instead of painting every grid point, clip the field by a soft support mask.
-                    # The blue layer now follows rainfall influence zones and fades out naturally;
-                    # only stronger rain forms violet / pink / yellow cores.
-                    support = weight_sum / max(float(weight_sum.max()), 1e-9)
-                    support_soft = np.power(np.clip(support, 0, 1), 0.42)
-                    hotspot = interpolated * support_soft
-                    field_val = np.clip(8.0 + hotspot * 1.04, 0, 100)
+                        # Rainfall controls BOTH color and physical footprint. This is the key fix:
+                        # small values no longer fill half the map; intense rainfall gets only a
+                        # compact but richer patch.
+                        intensity = np.clip(scaled / 100.0, 0.0, 1.0)
+                        radius = (0.035 + field_spread * (0.08 + 0.72 * (intensity ** 1.55)))
+                        lon_correction = max(0.35, np.cos(np.deg2rad(lat)))
 
-                    # Clip away weak outer pixels so the precipitation layer no longer looks like a
-                    # floating long rectangle. A tiny low-rainfall halo remains around real influence
-                    # zones to keep the Apple Weather-like softness.
-                    visible = (support > edge_feather) | (field_val >= 24)
+                        # Feather the outer edge by reducing value toward the boundary. Low edge
+                        # values are clipped, giving each patch an organic fade instead of a hard blob.
+                        local_val = scaled * particle_weight
+                        local_visible = local_val >= visible_floor
+                        if not np.any(local_visible):
+                            # Keep only a tiny center point for very light rain.
+                            local_visible = particle_r <= 0.18
+                            local_val = np.maximum(local_val, min(18.0, scaled))
 
-                    if not np.any(visible):
-                        visible = support >= np.nanpercentile(support, 92)
+                        lats = lat + particle_y[local_visible] * radius
+                        lons = lon + particle_x[local_visible] * radius / lon_correction
+                        vals = np.clip(local_val[local_visible], 0, 100)
 
-                    # Separate soft veil + heavy core. Plotly marker opacity is trace-wide, so using
-                    # two traces produces a nicer layered-weather look than one blunt rectangular sheet.
-                    core_visible = visible & (field_val >= 52)
-                    veil_visible = visible
+                        text = (
+                            f"{row['city']}<br>"
+                            f"Frame: {row['animation_period']}<br>"
+                            f"Rainfall: {rain_mm:.2f} mm<br>"
+                            f"Visual intensity: {scaled:.1f}"
+                        )
 
-                    hover_text = np.array([
-                        f"Frame: {str(frame_df['animation_period'].iloc[0])}<br>Rainfall layer intensity: {v:.1f}"
-                        for v in field_val[veil_visible]
-                    ])
+                        # Blue mist layer: only low/moderate points. Very transparent and fine.
+                        mist_mask = vals < 48
+                        if np.any(mist_mask):
+                            mist_lat.extend(lats[mist_mask])
+                            mist_lon.extend(lons[mist_mask])
+                            mist_val.extend(vals[mist_mask])
+                            mist_text.extend([text] * int(np.sum(mist_mask)))
 
-                    veil_trace = go.Scattermapbox(
-                        lat=grid_lat_flat[veil_visible],
-                        lon=grid_lon_flat[veil_visible],
+                        # Main rainfall layer: colored local patch, still compact.
+                        rain_mask = vals >= 18
+                        if np.any(rain_mask):
+                            rain_lat.extend(lats[rain_mask])
+                            rain_lon.extend(lons[rain_mask])
+                            rain_val.extend(vals[rain_mask])
+                            rain_text.extend([text] * int(np.sum(rain_mask)))
+
+                        # Heavy core: only top intensity points, not the whole area.
+                        core_mask = vals >= 58
+                        if np.any(core_mask):
+                            core_lat.extend(lats[core_mask])
+                            core_lon.extend(lons[core_mask])
+                            core_val.extend(vals[core_mask])
+
+                    mist_trace = go.Scattermapbox(
+                        lat=mist_lat,
+                        lon=mist_lon,
+                        mode="markers",
+                        marker=dict(
+                            size=max(3, int(field_cell_size * 0.82)),
+                            color=mist_val,
+                            colorscale=[
+                                [0.00, "rgba(56,189,248,0.00)"],
+                                [0.40, "rgba(56,189,248,0.30)"],
+                                [1.00, "rgba(14,165,233,0.46)"],
+                            ],
+                            cmin=0,
+                            cmax=55,
+                            opacity=max(0.16, heat_opacity * 0.70),
+                            symbol="circle",
+                            allowoverlap=True,
+                        ),
+                        text=mist_text,
+                        hovertemplate="%{text}<extra></extra>",
+                        showlegend=False,
+                        name="Fine rainfall mist",
+                    )
+
+                    rain_trace = go.Scattermapbox(
+                        lat=rain_lat,
+                        lon=rain_lon,
                         mode="markers",
                         marker=dict(
                             size=field_cell_size,
-                            color=field_val[veil_visible],
+                            color=rain_val,
                             colorscale=PRECIPITATION_COLORSCALE,
                             cmin=0,
                             cmax=100,
@@ -1804,23 +1844,23 @@ if chart_mode == "Heatmap Animation":
                             symbol="circle",
                             allowoverlap=True,
                         ),
-                        text=hover_text,
+                        text=rain_text,
                         hovertemplate="%{text}<extra></extra>",
                         showlegend=False,
-                        name="Soft rainfall field",
+                        name="Local rainfall patch",
                     )
 
                     core_trace = go.Scattermapbox(
-                        lat=grid_lat_flat[core_visible],
-                        lon=grid_lon_flat[core_visible],
+                        lat=core_lat,
+                        lon=core_lon,
                         mode="markers",
                         marker=dict(
-                            size=max(6, int(field_cell_size * 0.86)),
-                            color=field_val[core_visible],
+                            size=max(4, int(field_cell_size * 0.72)),
+                            color=core_val,
                             colorscale=HOTSPOT_COLORSCALE,
                             cmin=0,
                             cmax=100,
-                            opacity=min(0.92, heat_opacity + 0.18),
+                            opacity=min(0.86, heat_opacity + 0.20),
                             symbol="circle",
                             allowoverlap=True,
                         ),
@@ -1829,7 +1869,7 @@ if chart_mode == "Heatmap Animation":
                         name="Heavy rainfall core",
                     )
 
-                    return [veil_trace, core_trace]
+                    return [mist_trace, rain_trace, core_trace]
 
                 frames = []
                 for period in periods:
