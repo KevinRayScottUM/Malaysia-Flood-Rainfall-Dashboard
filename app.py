@@ -430,6 +430,21 @@ st.markdown(
     .js-plotly-plot .modebar-btn svg path {
         fill: #f8fafc !important;
     }
+
+    /* Plotly animation buttons: default should look calm, not permanently hovered/selected. */
+    .js-plotly-plot .updatemenu-item-rect {
+        fill: rgba(15, 23, 42, 0.42) !important;
+        stroke: rgba(255, 255, 255, 0.26) !important;
+        filter: none !important;
+    }
+    .js-plotly-plot .updatemenu-item-text {
+        fill: #f8fafc !important;
+        font-weight: 650 !important;
+    }
+    .js-plotly-plot .slider-bg {
+        fill: rgba(15, 23, 42, 0.25) !important;
+        stroke: rgba(255,255,255,0.28) !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -477,24 +492,47 @@ PLOTLY_CONFIG = {
     ],
 }
 
+# Dedicated map config: normal charts should not steal page scrolling,
+# but the rainfall map must support mouse-wheel zoom and drag-pan.
+PLOTLY_MAP_CONFIG = {
+    "responsive": True,
+    "displaylogo": False,
+    "scrollZoom": True,
+    "modeBarButtonsToRemove": [
+        "lasso2d",
+        "select2d",
+        "autoScale2d",
+    ],
+}
+
 
 def render_plotly(fig):
-    """Render Plotly charts in a responsive way with reliable contrast."""
+    """Render Plotly charts with readable title / legend spacing."""
     fig.update_layout(
         autosize=True,
         font=dict(size=13, color="#F8FAFC"),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=70, r=45, t=135, b=95),
+        title=dict(
+            x=0.015,
+            xanchor="left",
+            y=0.965,
+            yanchor="top",
+            font=dict(color="#F8FAFC", size=20),
+        ),
+        legend_title_text="",
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=1.08,
+            y=1.02,
             xanchor="left",
-            x=0,
+            x=0.02,
             font=dict(color="#F8FAFC", size=11),
-            bgcolor="rgba(15,23,42,0.32)",
-            bordercolor="rgba(255,255,255,0.10)",
+            bgcolor="rgba(15,23,42,0.20)",
+            bordercolor="rgba(255,255,255,0.08)",
             borderwidth=1,
+            itemwidth=30,
         ),
     )
     fig.update_xaxes(
@@ -1701,17 +1739,20 @@ if chart_mode == "Heatmap Animation":
                     paper_bgcolor="rgba(0,0,0,0)",
                     plot_bgcolor="rgba(0,0,0,0)",
                     transition_duration=smooth_transition,
+                    dragmode="pan",
+                    uirevision="rainfall-map",
                     updatemenus=[
                         dict(
                             type="buttons",
                             direction="right",
+                            active=-1,
                             x=0.03,
                             y=-0.095,
                             xanchor="left",
                             yanchor="top",
                             pad=dict(r=12, t=12, b=12, l=12),
-                            bgcolor="rgba(238,244,255,0.24)",
-                            bordercolor="rgba(255,255,255,0.52)",
+                            bgcolor="rgba(15,23,42,0.42)",
+                            bordercolor="rgba(255,255,255,0.30)",
                             borderwidth=1,
                             font=dict(color="#FFFFFF", size=14),
                             buttons=[
@@ -1739,18 +1780,17 @@ if chart_mode == "Heatmap Animation":
                         dict(
                             type="buttons",
                             direction="right",
+                            active=-1,
                             x=0.30,
                             y=-0.095,
                             xanchor="left",
                             yanchor="top",
                             pad=dict(r=12, t=12, b=12, l=12),
-                            bgcolor="rgba(238,244,255,0.24)",
-                            bordercolor="rgba(255,255,255,0.52)",
+                            bgcolor="rgba(15,23,42,0.42)",
+                            bordercolor="rgba(255,255,255,0.30)",
                             borderwidth=1,
                             font=dict(color="#FFFFFF", size=14),
                             buttons=[
-                                dict(label="＋ Zoom In", method="relayout", args=[{"mapbox.zoom": zoom_level + 0.85}]),
-                                dict(label="－ Zoom Out", method="relayout", args=[{"mapbox.zoom": max(3.2, zoom_level - 0.85)}]),
                                 dict(label="Reset Map", method="relayout", args=[{"mapbox.zoom": zoom_level, "mapbox.center": {"lat": center_lat, "lon": center_lon}}]),
                             ],
                         ),
@@ -1790,7 +1830,7 @@ if chart_mode == "Heatmap Animation":
                     ],
                 )
 
-                render_plotly(fig_heatmap_anim)
+                st.plotly_chart(fig_heatmap_anim, width="stretch", config=PLOTLY_MAP_CONFIG)
 
                 with st.expander("Map implementation note", expanded=False):
                     st.markdown(
