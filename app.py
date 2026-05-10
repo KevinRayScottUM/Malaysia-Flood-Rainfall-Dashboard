@@ -497,11 +497,16 @@ PLOTLY_CONFIG = {
 PLOTLY_MAP_CONFIG = {
     "responsive": True,
     "displaylogo": False,
+    # Keep mouse-wheel zoom and drag-pan active on the map.
     "scrollZoom": True,
+    # Hide the built-in +/- zoom buttons because the dashboard uses wheel zoom + drag-pan
+    # and a custom Reset Map button.
     "modeBarButtonsToRemove": [
         "lasso2d",
         "select2d",
         "autoScale2d",
+        "zoomInMapbox",
+        "zoomOutMapbox",
     ],
 }
 
@@ -1642,14 +1647,15 @@ if chart_mode == "Heatmap Animation":
             heat_group["rainfall_scaled"] = np.log1p(heat_group["rainfall"].clip(lower=0, upper=raw_cap)) / np.log1p(raw_cap) * 100.0
             heat_group.loc[(heat_group["rainfall"] > 0) & (heat_group["rainfall_scaled"] < 8), "rainfall_scaled"] = 8
 
-            # Build a compact regular field so the heatmap is visible but not a huge circular blob.
-            visual_field = build_compact_precipitation_field(
-                heat_group,
-                value_col="rainfall_scaled",
-                spread_deg=field_spread,
-            )
+            # Important fix:
+            # Do NOT use Densitymapbox here. Densitymapbox re-computes a screen-space density field
+            # after zoom/pan, so the same frame can visually turn blue or collapse into only the
+            # artificial 3x3 helper points. That was the root cause of the unstable blue-circle bug.
+            # Use one real map circle per city per frame instead: the marker color is locked to the
+            # rainfall value and stays stable when the user zooms or drags the map.
+            positive_heat_group = heat_group[heat_group["rainfall"] > 0].copy()
 
-            if visual_field.empty:
+            if positive_heat_group.empty:
                 st.warning("The selected period has no positive rainfall values, so no precipitation layer is visible. Try a wider date range or max_rainfall_mm.")
             else:
                 center_lat = float(heat_group["_lat"].mean())
@@ -1668,56 +1674,70 @@ if chart_mode == "Heatmap Animation":
 
                 periods = unique_periods["animation_period"].tolist()
                 first_period = periods[0]
-                first_field = visual_field[visual_field["animation_period"] == first_period]
 
-                density_kwargs = dict(
-                    radius=heat_radius,
-                    colorscale=PRECIPITATION_COLORSCALE,
-                    zmin=0,
-                    zmax=100,
-                    opacity=heat_opacity,
-                    colorbar=dict(
-                        title=dict(text="Precipitation", font=dict(color="#F8FAFC", size=13)),
-                        tickmode="array",
-                        tickvals=[8, 38, 68, 94],
-                        ticktext=["Light", "Moderate", "Heavy", "Extreme"],
-                        tickfont=dict(color="#F8FAFC", size=12),
-                        len=0.40,
-                        thickness=16,
-                        x=0.965,
-                        y=0.53,
-                        bgcolor="rgba(15,23,42,0.72)",
-                        bordercolor="rgba(255,255,255,0.32)",
-                        borderwidth=1,
-                    ),
-                    hovertemplate=(
-                        "<b>%{customdata[0]}</b><br>"
-                        "State: %{customdata[1]}<br>"
-                        "Rainfall: %{customdata[2]:.2f} mm<br>"
-                        "Frame: %{customdata[3]}<extra></extra>"
-                    ),
+                marker_colorbar = dict(
+                    title=dict(text="Precipitation", font=dict(color="#F8FAFC", size=13)),
+                    tickmode="array",
+                    tickvals=[8, 38, 68, 94],
+                    ticktext=["Light", "Moderate", "Heavy", "Extreme"],
+                    tickfont=dict(color="#F8FAFC", size=12),
+                    len=0.40,
+                    thickness=16,
+                    x=0.965,
+                    y=0.53,
+                    bgcolor="rgba(15,23,42,0.72)",
+                    bordercolor="rgba(255,255,255,0.32)",
+                    borderwidth=1,
                 )
 
-                def _density_trace(frame_df):
-                    return go.Densitymapbox(
-                        lat=frame_df["_vis_lat"],
-                        lon=frame_df["_vis_lon"],
-                        z=frame_df["_vis_value"],
-                        customdata=np.stack([
+                def _circle_trace(frame_df):
+                    frame_df = frame_df[frame_df["rainfall"] > 0].copy()
+                    if frame_df.empty:
+                        customdata = np.empty((0, 4), dtype=object)
+                        marker_size = []
+                    else:
+                        customdata = np.stack([
                             frame_df["city"].astype(str),
                             frame_df["state"].astype(str),
                             frame_df["rainfall"].astype(float),
                             frame_df["animation_period"].astype(str),
-                        ], axis=-1),
-                        **density_kwargs,
+                        ], axis=-1)
+                        marker_size = np.clip(
+                            heat_radius * (0.70 + 0.55 * frame_df["rainfall_scaled"].astype(float).to_numpy() / 100.0),
+                            14,
+                            92,
+                        )
+
+                    return go.Scattermapbox(
+                        lat=frame_df["_lat"],
+                        lon=frame_df["_lon"],
+                        mode="markers",
+                        marker=dict(
+                            size=marker_size,
+                            color=frame_df["rainfall_scaled"],
+                            colorscale=PRECIPITATION_COLORSCALE,
+                            cmin=0,
+                            cmax=100,
+                            opacity=heat_opacity,
+                            colorbar=marker_colorbar,
+                        ),
+                        customdata=customdata,
+                        hovertemplate=(
+                            "<b>%{customdata[0]}</b><br>"
+                            "State: %{customdata[1]}<br>"
+                            "Rainfall: %{customdata[2]:.2f} mm<br>"
+                            "Frame: %{customdata[3]}<extra></extra>"
+                        ),
+                        showlegend=False,
                     )
 
                 frames = []
                 for period in periods:
-                    frame_df = visual_field[visual_field["animation_period"] == period]
-                    frames.append(go.Frame(name=str(period), data=[_density_trace(frame_df)]))
+                    frame_df = heat_group[heat_group["animation_period"] == period]
+                    frames.append(go.Frame(name=str(period), data=[_circle_trace(frame_df)]))
 
-                fig_heatmap_anim = go.Figure(data=[_density_trace(first_field)], frames=frames)
+                first_field = heat_group[heat_group["animation_period"] == first_period]
+                fig_heatmap_anim = go.Figure(data=[_circle_trace(first_field)], frames=frames)
 
                 fig_heatmap_anim.update_layout(
                     height=760,
@@ -1781,9 +1801,9 @@ if chart_mode == "Heatmap Animation":
                             type="buttons",
                             direction="right",
                             active=-1,
-                            x=0.30,
+                            x=0.50,
                             y=-0.095,
-                            xanchor="left",
+                            xanchor="center",
                             yanchor="top",
                             pad=dict(r=12, t=12, b=12, l=12),
                             bgcolor="rgba(15,23,42,0.42)",
@@ -1835,9 +1855,9 @@ if chart_mode == "Heatmap Animation":
                 with st.expander("Map implementation note", expanded=False):
                     st.markdown(
                         """
-                        - This version intentionally restores the earlier large circular precipitation layer.
-                        - The base map is full-color OpenStreetMap by default.
-                        - Dragging the timeline updates the active animation frame and recolors the rainfall circles.
+                        - This version uses one real map circle per city per frame, not artificial 3x3 density helper points.
+                        - Circle color is locked to the rainfall value, so zooming and dragging the map will not recolor the same frame.
+                        - Mouse-wheel zoom and drag-pan remain enabled; the built-in +/- map buttons are hidden.
                         - Daily mode is frame-limited for browser performance. For full daily detail, narrow the year range first.
                         - This is still a city-level CHIRPS dashboard visualization, not official real-time radar.
                         """
