@@ -451,6 +451,68 @@ st.markdown(
 )
 
 
+
+
+# =========================================================
+# 2.2) Anti-flicker rendering patch
+#     The liquid-glass skin is beautiful, but backdrop-filter +
+#     Plotly Mapbox hover/modebar repaint can make Chromium/Safari
+#     flash on every mouse movement. This override keeps the overall
+#     design while removing GPU-expensive effects only around charts.
+# =========================================================
+st.markdown(
+    """
+    <style>
+    /* Do not blur the Plotly container itself. Mapbox already uses a GPU canvas;
+       putting backdrop-filter over/around that canvas causes full-layer repaint
+       when the mouse moves, when the modebar appears, or when hover labels update. */
+    div[data-testid="stVerticalBlock"] > div:has(.js-plotly-plot) {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        background: rgba(18, 24, 38, 0.82) !important;
+        box-shadow: 0 18px 44px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.14) !important;
+        transform: translateZ(0);
+        contain: paint;
+    }
+
+    /* Plotly's modebar normally appears/disappears on hover. That DOM change is
+       one common reason the whole map looks like it is flashing. We already have
+       Start/Pause/Reset controls inside the figure, so the floating modebar is disabled. */
+    .js-plotly-plot .modebar,
+    .js-plotly-plot .modebar-container {
+        display: none !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+    }
+
+    /* Avoid expensive hover transforms on Streamlit buttons while the map is nearby. */
+    .stButton > button,
+    div[data-testid="stDownloadButton"] > button,
+    div[data-testid="stFormSubmitButton"] > button,
+    button[kind="primary"],
+    button[kind="secondary"] {
+        transition: none !important;
+        transform: none !important;
+    }
+    .stButton > button:hover,
+    div[data-testid="stDownloadButton"] > button:hover,
+    div[data-testid="stFormSubmitButton"] > button:hover,
+    button[kind="primary"]:hover,
+    button[kind="secondary"]:hover {
+        transform: none !important;
+    }
+
+    /* Streamlit can briefly show a running overlay/status during reruns. Keep it
+       visually quiet instead of a strong flash. */
+    [data-testid="stStatusWidget"],
+    [data-testid="stDecoration"] {
+        opacity: 0.18 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # =========================================================
 # 3) Load data
 # =========================================================
@@ -501,6 +563,7 @@ PLOTLY_CONFIG = {
 PLOTLY_MAP_CONFIG = {
     "responsive": True,
     "displaylogo": False,
+    "displayModeBar": False,
     "scrollZoom": False,
     "doubleClick": False,
     "modeBarButtonsToRemove": [
@@ -1921,8 +1984,7 @@ if chart_mode == "Heatmap Animation":
                             symbol="circle",
                             allowoverlap=True,
                         ),
-                        text=mist_text,
-                        hovertemplate="%{text}<extra></extra>",
+                        hoverinfo="skip",
                         showlegend=False,
                         name="Fine rainfall mist",
                     )
@@ -1942,8 +2004,7 @@ if chart_mode == "Heatmap Animation":
                             symbol="circle",
                             allowoverlap=True,
                         ),
-                        text=rain_text,
-                        hovertemplate="%{text}<extra></extra>",
+                        hoverinfo="skip",
                         showlegend=False,
                         name="Local rainfall patch",
                     )
@@ -1998,9 +2059,12 @@ if chart_mode == "Heatmap Animation":
                     plot_bgcolor="rgba(0,0,0,0)",
                     transition_duration=smooth_transition,
                     dragmode="pan",
-                    uirevision="rainfall-map-stable-v19",
-                    selectionrevision="rainfall-map-stable-v19",
-                    editrevision="rainfall-map-stable-v19",
+                    hovermode=False,
+                    hoverdistance=-1,
+                    spikedistance=-1,
+                    uirevision="rainfall-map-stable-v20",
+                    selectionrevision="rainfall-map-stable-v20",
+                    editrevision="rainfall-map-stable-v20",
                     updatemenus=[
                         dict(
                             type="buttons",
@@ -2090,7 +2154,7 @@ if chart_mode == "Heatmap Animation":
                     ],
                 )
 
-                st.plotly_chart(fig_heatmap_anim, width="stretch", config=PLOTLY_MAP_CONFIG, key="rainfall_heatmap_animation_stable_v19")
+                st.plotly_chart(fig_heatmap_anim, width="stretch", config=PLOTLY_MAP_CONFIG, key="rainfall_heatmap_animation_stable_v20")
 
                 with st.expander("Map implementation note", expanded=False):
                     st.markdown(
@@ -2099,7 +2163,7 @@ if chart_mode == "Heatmap Animation":
                         - It uses high-density Fibonacci-disc micro-particles, so each city rainfall patch looks smoother and more circular instead of visibly made from a few dots.
                         - It uses a soft blue rainfall veil plus a separate stronger violet/pink/yellow core for heavy-rain zones.
                         - The field is built from city-level CHIRPS rainfall as local city patches, so it avoids pretending that city-level data is a full radar raster.
-                        - Mouse-wheel zoom is disabled to prevent tile/particle redraw flicker during normal page scrolling. Use the Plotly modebar zoom buttons or Reset Map instead.
+                        - Mouse-wheel zoom, Plotly hover labels, and the floating Plotly modebar are disabled to prevent mouse-move repaint flicker. Use Start/Pause/Reset Map instead.
                         - Daily mode is frame-limited for browser performance. For full daily detail, narrow the year range first.
                         - This is still a city-level CHIRPS dashboard visualization, not official real-time radar.
                         """
