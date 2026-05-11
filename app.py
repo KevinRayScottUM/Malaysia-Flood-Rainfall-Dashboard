@@ -958,6 +958,67 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+
+
+# =========================================================
+# 2.3) Sidebar option text-fill cleanup
+#      Keep the existing liquid-glass radio/checkbox indicators,
+#      but remove the blue fill behind selected option text.
+# =========================================================
+st.markdown(
+    """
+    <style>
+    /* Remove only the blue text-highlight/fill blocks in sidebar radio and checkbox rows.
+       The actual selected radio dot / checkbox square is restored below. */
+    section[data-testid="stSidebar"] [data-testid="stRadio"] label,
+    section[data-testid="stSidebar"] [data-testid="stCheckbox"] label {
+        background: transparent !important;
+        background-color: transparent !important;
+        background-image: none !important;
+        box-shadow: none !important;
+    }
+
+    section[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked),
+    section[data-testid="stSidebar"] [data-testid="stCheckbox"] label:has(input:checked) {
+        background: transparent !important;
+        background-color: transparent !important;
+        background-image: none !important;
+        border-color: transparent !important;
+        box-shadow: none !important;
+    }
+
+    section[data-testid="stSidebar"] [data-testid="stRadio"] label *,
+    section[data-testid="stSidebar"] [data-testid="stCheckbox"] label * {
+        background: transparent !important;
+        background-color: transparent !important;
+        background-image: none !important;
+        box-shadow: none !important;
+        -webkit-text-fill-color: rgba(248,250,252,0.96) !important;
+        color: rgba(248,250,252,0.96) !important;
+    }
+
+    /* Restore the selected indicator itself so the current option is still obvious. */
+    section[data-testid="stSidebar"] [data-testid="stRadio"] input:checked + div,
+    section[data-testid="stSidebar"] [data-testid="stCheckbox"] input:checked + div {
+        border-color: rgba(0, 122, 255, 0.95) !important;
+        background: rgba(0, 122, 255, 0.95) !important;
+        background-color: rgba(0, 122, 255, 0.95) !important;
+        box-shadow: 0 0 0 4px rgba(0,122,255,0.18), inset 0 1px 0 rgba(255,255,255,0.26) !important;
+        -webkit-text-fill-color: initial !important;
+    }
+
+    section[data-testid="stSidebar"] [data-testid="stRadio"] input:not(:checked) + div,
+    section[data-testid="stSidebar"] [data-testid="stCheckbox"] input:not(:checked) + div {
+        background: rgba(255,255,255,0.08) !important;
+        background-color: rgba(255,255,255,0.08) !important;
+        border-color: rgba(255,255,255,0.42) !important;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.16) !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # Use a blue-first Plotly palette so new categorical traces do not default to red.
 px.defaults.color_discrete_sequence = [
     "#007AFF", "#64D2FF", "#30D158", "#BF5AF2", "#FFD60A",
