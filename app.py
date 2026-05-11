@@ -958,6 +958,157 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+
+
+# =========================================================
+# 2.5) Final UI correction: clean sidebar states + redesigned KPI cards
+#      No blue text-fill blocks in sidebar. KPI labels/values use a
+#      controlled custom card instead of Streamlit metric internals.
+# =========================================================
+st.markdown(
+    """
+    <style>
+    :root {
+        --ios-blue: #007AFF;
+        --ios-blue-rgb: 0, 122, 255;
+        --card-text: #F8FAFC;
+        --card-muted: rgba(226,232,240,0.76);
+    }
+
+    /* Hard reset for sidebar option rows: the text itself must NEVER become a
+       filled blue pill. Only the small native dot/check indicates selection. */
+    section[data-testid="stSidebar"] [data-testid="stRadio"] label,
+    section[data-testid="stSidebar"] [data-testid="stCheckbox"] label,
+    section[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked),
+    section[data-testid="stSidebar"] [data-testid="stCheckbox"] label:has(input:checked),
+    section[data-testid="stSidebar"] [data-testid="stRadio"] label:hover,
+    section[data-testid="stSidebar"] [data-testid="stCheckbox"] label:hover,
+    section[data-testid="stSidebar"] [data-testid="stRadio"] label:focus-within,
+    section[data-testid="stSidebar"] [data-testid="stCheckbox"] label:focus-within {
+        background: transparent !important;
+        background-color: transparent !important;
+        border-color: transparent !important;
+        box-shadow: none !important;
+        outline: none !important;
+        padding: 2px 0 !important;
+    }
+
+    section[data-testid="stSidebar"] [data-testid="stRadio"] label *,
+    section[data-testid="stSidebar"] [data-testid="stCheckbox"] label *,
+    section[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) *,
+    section[data-testid="stSidebar"] [data-testid="stCheckbox"] label:has(input:checked) * {
+        background: transparent !important;
+        background-color: transparent !important;
+        color: rgba(248,250,252,0.96) !important;
+        text-shadow: none !important;
+        box-shadow: none !important;
+    }
+
+    section[data-testid="stSidebar"] p::selection,
+    section[data-testid="stSidebar"] span::selection,
+    section[data-testid="stSidebar"] label::selection,
+    section[data-testid="stSidebar"] div::selection {
+        background: transparent !important;
+        color: rgba(248,250,252,0.96) !important;
+    }
+
+    /* Keep the iOS blue only on the actual radio dot / checkbox mark. */
+    section[data-testid="stSidebar"] input[type="radio"],
+    section[data-testid="stSidebar"] input[type="checkbox"] {
+        accent-color: var(--ios-blue) !important;
+    }
+
+    /* The old stMetric internals are not used anymore, but keep them hidden-stable
+       in case Streamlit renders any future metric elsewhere. */
+    div[data-testid="stMetric"]::after,
+    div[data-testid="stMetric"]::before {
+        display: none !important;
+        content: none !important;
+    }
+
+    .kpi-card {
+        position: relative;
+        overflow: hidden;
+        min-height: 112px;
+        padding: 22px 22px 20px 22px;
+        border-radius: 28px;
+        border: 1px solid rgba(255,255,255,0.22);
+        background:
+            linear-gradient(135deg, rgba(255,255,255,0.145), rgba(255,255,255,0.045)),
+            radial-gradient(circle at 14% 0%, rgba(255,255,255,0.20), transparent 34%),
+            radial-gradient(circle at 92% 20%, rgba(var(--ios-blue-rgb),0.22), transparent 42%),
+            rgba(8, 13, 26, 0.46);
+        box-shadow:
+            0 22px 58px rgba(0,0,0,0.30),
+            0 0 32px rgba(var(--ios-blue-rgb),0.09),
+            inset 0 1px 0 rgba(255,255,255,0.25),
+            inset 0 -1px 0 rgba(255,255,255,0.06);
+        backdrop-filter: blur(26px) saturate(185%) brightness(1.06);
+        -webkit-backdrop-filter: blur(26px) saturate(185%) brightness(1.06);
+    }
+
+    .kpi-card::before {
+        content: "";
+        position: absolute;
+        left: 12px;
+        right: 12px;
+        top: 10px;
+        height: 34px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, rgba(255,255,255,0.16), rgba(255,255,255,0.025));
+        pointer-events: none;
+    }
+
+    .kpi-card::after {
+        content: "";
+        position: absolute;
+        width: 110px;
+        height: 110px;
+        right: -44px;
+        bottom: -52px;
+        border-radius: 50%;
+        background: rgba(var(--ios-blue-rgb),0.18);
+        filter: blur(10px);
+        pointer-events: none;
+    }
+
+    .kpi-label {
+        position: relative;
+        z-index: 1;
+        display: block;
+        margin: 0 0 12px 0;
+        color: var(--card-muted) !important;
+        font-size: 0.88rem;
+        line-height: 1.2;
+        font-weight: 740;
+        letter-spacing: -0.01em;
+        text-shadow: none !important;
+        white-space: nowrap;
+    }
+
+    .kpi-value {
+        position: relative;
+        z-index: 1;
+        display: block;
+        color: var(--card-text) !important;
+        font-size: clamp(1.75rem, 2.4vw, 2.45rem);
+        line-height: 1.02;
+        font-weight: 900;
+        letter-spacing: -0.055em;
+        text-shadow: 0 8px 28px rgba(0,0,0,0.28), 0 0 22px rgba(var(--ios-blue-rgb),0.13) !important;
+        white-space: nowrap;
+    }
+
+    @media (max-width: 900px) {
+        .kpi-card { min-height: 96px; padding: 18px 18px 16px 18px; }
+        .kpi-label { font-size: 0.82rem; }
+        .kpi-value { font-size: 1.75rem; }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # Use a blue-first Plotly palette so new categorical traces do not default to red.
 px.defaults.color_discrete_sequence = [
     "#007AFF", "#64D2FF", "#30D158", "#BF5AF2", "#FFD60A",
@@ -1530,12 +1681,28 @@ city_count = filtered["city"].nunique()
 avg_rainfall = filtered["avg_rainfall_mm"].mean()
 risk_count = int(filtered["Flood_Risk_Binary"].sum())
 
+def render_kpi_card(label, value):
+    st.markdown(
+        f"""
+        <div class="kpi-card">
+            <span class="kpi-label">{label}</span>
+            <span class="kpi-value">{value}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 col1, col2, col3, col4 = st.columns(4)
 
-col1.metric("Filtered Records", f"{total_records:,}")
-col2.metric("Selected Cities", city_count)
-col3.metric("Average Rainfall", f"{avg_rainfall:.2f} mm")
-col4.metric("Flood Risk Signals", f"{risk_count:,}")
+with col1:
+    render_kpi_card("Filtered Records", f"{total_records:,}")
+with col2:
+    render_kpi_card("Selected Cities", f"{city_count}")
+with col3:
+    render_kpi_card("Average Rainfall", f"{avg_rainfall:.2f} mm")
+with col4:
+    render_kpi_card("Flood Risk Signals", f"{risk_count:,}")
 
 
 # =========================================================
