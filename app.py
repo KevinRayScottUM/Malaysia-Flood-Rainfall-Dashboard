@@ -2947,3 +2947,149 @@ st.markdown(
     It does not represent official flood occurrence. It is derived from the rainfall intensity rule where Very Heavy rainfall is treated as a strong rainfall-driven flood-risk signal.
     """
 )
+
+# =========================================================
+# 2.6) Final correction requested by user:
+#      Restore the selected-option glass row / checkbox-radio indicators,
+#      but DO NOT fill the option text itself with blue.
+#      Keep checkbox/radio/slider accents in iOS #007AFF.
+# =========================================================
+st.markdown(
+    """
+    <style>
+    :root {
+        --ios-blue: #007AFF;
+        --ios-blue-rgb: 0, 122, 255;
+    }
+
+    /* Restore the liquid-glass selected row shape in the sidebar. */
+    section[data-testid="stSidebar"] div[data-testid="stRadio"] label,
+    section[data-testid="stSidebar"] div[data-testid="stCheckbox"] label {
+        display: flex !important;
+        align-items: center !important;
+        gap: 0.42rem !important;
+        min-height: 32px !important;
+        width: fit-content !important;
+        max-width: 100% !important;
+        padding: 5px 9px !important;
+        margin: 1px 0 3px 0 !important;
+        border-radius: 999px !important;
+        border: 1px solid transparent !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        outline: none !important;
+        cursor: pointer !important;
+        transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease !important;
+    }
+
+    section[data-testid="stSidebar"] div[data-testid="stRadio"] label:hover,
+    section[data-testid="stSidebar"] div[data-testid="stCheckbox"] label:hover {
+        background:
+            linear-gradient(135deg, rgba(255,255,255,0.070), rgba(255,255,255,0.025)) !important;
+        border-color: rgba(255,255,255,0.10) !important;
+    }
+
+    section[data-testid="stSidebar"] div[data-testid="stRadio"] label:has(input:checked),
+    section[data-testid="stSidebar"] div[data-testid="stCheckbox"] label:has(input:checked) {
+        background:
+            radial-gradient(circle at 18% 15%, rgba(255,255,255,0.20), transparent 36%),
+            linear-gradient(135deg, rgba(255,255,255,0.115), rgba(255,255,255,0.035)),
+            rgba(var(--ios-blue-rgb), 0.125) !important;
+        border-color: rgba(var(--ios-blue-rgb), 0.42) !important;
+        box-shadow:
+            0 8px 22px rgba(var(--ios-blue-rgb),0.16),
+            inset 0 1px 0 rgba(255,255,255,0.18) !important;
+    }
+
+    /* The important part: never apply a blue rectangle behind the WORDS.
+       Only the row glass and the small dot/check may be blue. */
+    section[data-testid="stSidebar"] div[data-testid="stRadio"] label p,
+    section[data-testid="stSidebar"] div[data-testid="stCheckbox"] label p,
+    section[data-testid="stSidebar"] div[data-testid="stRadio"] label span,
+    section[data-testid="stSidebar"] div[data-testid="stCheckbox"] label span,
+    section[data-testid="stSidebar"] div[data-testid="stRadio"] label:has(input:checked) p,
+    section[data-testid="stSidebar"] div[data-testid="stCheckbox"] label:has(input:checked) p,
+    section[data-testid="stSidebar"] div[data-testid="stRadio"] label:has(input:checked) span,
+    section[data-testid="stSidebar"] div[data-testid="stCheckbox"] label:has(input:checked) span {
+        background: transparent !important;
+        background-color: transparent !important;
+        color: rgba(248,250,252,0.96) !important;
+        -webkit-text-fill-color: rgba(248,250,252,0.96) !important;
+        text-shadow: none !important;
+        box-shadow: none !important;
+        outline: none !important;
+    }
+
+    /* Do not let browser text selection/focus create a blue text-fill block. */
+    section[data-testid="stSidebar"] p::selection,
+    section[data-testid="stSidebar"] span::selection,
+    section[data-testid="stSidebar"] label::selection,
+    section[data-testid="stSidebar"] div::selection {
+        background: transparent !important;
+        color: rgba(248,250,252,0.96) !important;
+        -webkit-text-fill-color: rgba(248,250,252,0.96) !important;
+    }
+
+    /* Restore/keep the actual radio dot and checkbox check mark. */
+    section[data-testid="stSidebar"] input[type="radio"],
+    section[data-testid="stSidebar"] input[type="checkbox"] {
+        appearance: auto !important;
+        -webkit-appearance: auto !important;
+        accent-color: var(--ios-blue) !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        display: inline-block !important;
+        width: 15px !important;
+        height: 15px !important;
+        min-width: 15px !important;
+        margin: 0 2px 0 0 !important;
+        filter: drop-shadow(0 0 7px rgba(var(--ios-blue-rgb),0.35)) !important;
+    }
+
+    /* If Streamlit/BaseWeb renders an extra custom indicator div after the input,
+       keep it blue too, but do not touch the label text. */
+    section[data-testid="stSidebar"] input[type="radio"]:checked + div,
+    section[data-testid="stSidebar"] input[type="checkbox"]:checked + div {
+        border-color: rgba(var(--ios-blue-rgb),0.96) !important;
+        background-color: rgba(var(--ios-blue-rgb),0.96) !important;
+        box-shadow: 0 0 0 4px rgba(var(--ios-blue-rgb),0.14) !important;
+    }
+
+    /* iOS blue sliders: track fill + thumb. */
+    section[data-testid="stSidebar"] div[data-testid="stSlider"] [role="slider"] {
+        background: #ffffff !important;
+        border: 2px solid var(--ios-blue) !important;
+        box-shadow:
+            0 0 0 5px rgba(var(--ios-blue-rgb),0.16),
+            0 0 16px rgba(var(--ios-blue-rgb),0.42),
+            0 8px 18px rgba(0,0,0,0.28) !important;
+    }
+
+    section[data-testid="stSidebar"] div[data-testid="stSlider"] div[data-baseweb="slider"] div[style*="background"] {
+        border-radius: 999px !important;
+    }
+
+    /* KPI cards: keep the clean fixed layout from v24, with slightly safer top highlight
+       so labels never look clipped or misplaced. */
+    .kpi-card {
+        min-height: 116px !important;
+        padding: 24px 22px 20px 22px !important;
+    }
+    .kpi-card::before {
+        top: 9px !important;
+        height: 30px !important;
+        opacity: 0.55 !important;
+    }
+    .kpi-label {
+        margin-top: 2px !important;
+        margin-bottom: 13px !important;
+        color: rgba(226,232,240,0.84) !important;
+        line-height: 1.15 !important;
+    }
+    .kpi-value {
+        line-height: 1.0 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
