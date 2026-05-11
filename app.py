@@ -804,6 +804,160 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+
+# =========================================================
+# 2.4) Readability + scroll-reactive liquid glass correction
+#      Fixes: unreadable Plotly hover/legend boxes, blue text-fill
+#      selection on sidebar choices, and makes glass panels visually
+#      pick up the changing fixed background while scrolling.
+# =========================================================
+st.markdown(
+    """
+    <style>
+    :root {
+        --ios-blue: #007AFF;
+        --ios-blue-rgb: 0, 122, 255;
+        --page-text: #F8FAFC;
+        --page-muted: rgba(226,232,240,0.82);
+        --glass-dark: rgba(8, 13, 26, 0.50);
+        --glass-dark-strong: rgba(8, 13, 26, 0.72);
+        --glass-line: rgba(255,255,255,0.20);
+    }
+
+    /* Fixed scenic background: transparent glass cards move over this while scrolling,
+       so the perceived color under the glass changes instead of looking like a flat card. */
+    html, body, .stApp, [data-testid="stAppViewContainer"] {
+        background-image:
+            radial-gradient(circle at 12% 8%, rgba(var(--ios-blue-rgb), 0.36), transparent 30%),
+            radial-gradient(circle at 86% 12%, rgba(90, 200, 250, 0.22), transparent 28%),
+            radial-gradient(circle at 18% 58%, rgba(48, 209, 88, 0.10), transparent 30%),
+            radial-gradient(circle at 74% 82%, rgba(191, 90, 242, 0.16), transparent 32%),
+            linear-gradient(135deg, #030712 0%, #071426 44%, #06101d 100%) !important;
+        background-attachment: fixed !important;
+        background-size: 150% 150%, 145% 145%, 135% 135%, 150% 150%, cover !important;
+        color: var(--page-text) !important;
+    }
+
+    /* A very soft moving light field behind the content. It is fixed, not attached to cards,
+       so scrolling creates the 'glass over changing scene' feeling. */
+    [data-testid="stAppViewContainer"]::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 0;
+        background:
+            linear-gradient(115deg, transparent 0%, rgba(255,255,255,0.050) 34%, transparent 62%),
+            radial-gradient(circle at 50% 0%, rgba(255,255,255,0.045), transparent 34%);
+        mix-blend-mode: screen;
+    }
+    [data-testid="stAppViewContainer"] > .main { position: relative; z-index: 1; }
+
+    /* Strong, readable typography everywhere on glass. */
+    .block-container, .block-container p, .block-container span, .block-container label,
+    .block-container div, .block-container h1, .block-container h2, .block-container h3 {
+        color: var(--page-text) !important;
+        text-shadow: 0 1px 12px rgba(0,0,0,0.22);
+    }
+
+    /* Sidebar: no ugly blue text-fill blocks when an option is selected/focused.
+       Keep only the small native radio/checkbox indicator plus a subtle row glow. */
+    section[data-testid="stSidebar"] [data-testid="stRadio"] label,
+    section[data-testid="stSidebar"] [data-testid="stCheckbox"] label {
+        background: transparent !important;
+        box-shadow: none !important;
+        border: 1px solid transparent !important;
+        border-radius: 14px !important;
+        padding: 4px 6px !important;
+        user-select: none !important;
+        -webkit-user-select: none !important;
+    }
+    section[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked),
+    section[data-testid="stSidebar"] [data-testid="stCheckbox"] label:has(input:checked) {
+        background: rgba(var(--ios-blue-rgb), 0.10) !important;
+        border-color: rgba(var(--ios-blue-rgb), 0.30) !important;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.10) !important;
+    }
+    section[data-testid="stSidebar"] [data-testid="stRadio"] label span,
+    section[data-testid="stSidebar"] [data-testid="stCheckbox"] label span,
+    section[data-testid="stSidebar"] [data-testid="stRadio"] label p,
+    section[data-testid="stSidebar"] [data-testid="stCheckbox"] label p {
+        background: transparent !important;
+        color: rgba(248,250,252,0.96) !important;
+        text-shadow: none !important;
+    }
+    section[data-testid="stSidebar"] ::selection {
+        background: rgba(var(--ios-blue-rgb), 0.22) !important;
+        color: #ffffff !important;
+    }
+
+    /* Make selected multiselect tags blue glass, but keep text readable and avoid flat plastic look. */
+    div[data-testid="stMultiSelect"] [data-baseweb="tag"] {
+        background:
+            linear-gradient(135deg, rgba(0,122,255,0.78), rgba(90,200,250,0.42)),
+            radial-gradient(circle at 20% 15%, rgba(255,255,255,0.34), transparent 35%) !important;
+        color: #ffffff !important;
+        border: 1px solid rgba(255,255,255,0.24) !important;
+        box-shadow: 0 8px 20px rgba(0,122,255,0.22), inset 0 1px 0 rgba(255,255,255,0.28) !important;
+    }
+
+    /* Liquid glass panels: less opaque so the fixed scenic background influences the card color. */
+    div[data-testid="stAlert"],
+    div[data-testid="stMetric"],
+    .glass-caption {
+        background:
+            linear-gradient(135deg, rgba(255,255,255,0.16), rgba(255,255,255,0.055)),
+            radial-gradient(circle at 8% 0%, rgba(255,255,255,0.16), transparent 38%),
+            rgba(8,13,26,0.48) !important;
+        border: 1px solid rgba(255,255,255,0.23) !important;
+        backdrop-filter: blur(26px) saturate(190%) brightness(1.08) !important;
+        -webkit-backdrop-filter: blur(26px) saturate(190%) brightness(1.08) !important;
+        box-shadow: 0 22px 58px rgba(0,0,0,0.30), 0 0 32px rgba(0,122,255,0.10), inset 0 1px 0 rgba(255,255,255,0.26) !important;
+    }
+
+    /* Plotly panels keep canvas stability but become more transparent, with a glass highlight layer. */
+    div[data-testid="stVerticalBlock"] > div:has(.js-plotly-plot) {
+        background:
+            linear-gradient(135deg, rgba(255,255,255,0.105), rgba(255,255,255,0.035)),
+            rgba(8,13,26,0.66) !important;
+        border: 1px solid rgba(255,255,255,0.22) !important;
+        box-shadow: 0 24px 68px rgba(0,0,0,0.34), 0 0 32px rgba(0,122,255,0.08), inset 0 1px 0 rgba(255,255,255,0.18) !important;
+    }
+
+    /* Plotly hover/unified hover box readability. This fixes the white unreadable box. */
+    .js-plotly-plot .hoverlayer .hovertext path,
+    .js-plotly-plot .hoverlayer .spikeline crisp,
+    .js-plotly-plot .hoverlayer path {
+        fill: rgba(8,13,26,0.96) !important;
+        stroke: rgba(0,122,255,0.62) !important;
+    }
+    .js-plotly-plot .hoverlayer text {
+        fill: #F8FAFC !important;
+        font-weight: 650 !important;
+        text-shadow: none !important;
+    }
+    .js-plotly-plot .legend,
+    .js-plotly-plot .legend rect.bg {
+        fill: rgba(8,13,26,0.50) !important;
+        stroke: rgba(255,255,255,0.16) !important;
+    }
+    .js-plotly-plot .legend text {
+        fill: #F8FAFC !important;
+        text-shadow: none !important;
+    }
+
+    /* Apply button keeps the blue liquid glass look but is not painfully bright. */
+    div[data-testid="stFormSubmitButton"] > button, .stButton > button {
+        background:
+            radial-gradient(circle at 18% 12%, rgba(255,255,255,0.40), transparent 32%),
+            linear-gradient(135deg, rgba(0,122,255,0.82), rgba(0,122,255,0.46) 58%, rgba(255,255,255,0.12)) !important;
+        color: #ffffff !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # Use a blue-first Plotly palette so new categorical traces do not default to red.
 px.defaults.color_discrete_sequence = [
     "#007AFF", "#64D2FF", "#30D158", "#BF5AF2", "#FFD60A",
@@ -892,10 +1046,16 @@ def render_plotly(fig):
             xanchor="left",
             x=0.02,
             font=dict(color="#F8FAFC", size=11),
-            bgcolor="rgba(15,23,42,0.20)",
-            bordercolor="rgba(255,255,255,0.08)",
+            bgcolor="rgba(15,23,42,0.42)",
+            bordercolor="rgba(255,255,255,0.14)",
             borderwidth=1,
             itemwidth=30,
+        ),
+        hoverlabel=dict(
+            bgcolor="rgba(8, 13, 26, 0.96)",
+            bordercolor="rgba(0, 122, 255, 0.62)",
+            font=dict(color="#F8FAFC", size=12),
+            namelength=-1,
         ),
     )
     fig.update_xaxes(
