@@ -138,8 +138,8 @@ st.markdown(
         --glass-border: rgba(255, 255, 255, 0.62);
         --glass-shadow: 0 18px 48px rgba(31, 38, 135, 0.18);
         --glass-inner: inset 0 1px 0 rgba(255,255,255,0.80), inset 0 -1px 0 rgba(255,255,255,0.24);
-        --ios-red: #ff4d57;
-        --ios-blue: #2f9bff;
+        --ios-red: #007AFF;
+        --ios-blue: #007AFF;
         --ios-purple: #d45af3;
         --ios-yellow: #fff02e;
     }
@@ -238,9 +238,9 @@ st.markdown(
     }
 
     div[data-testid="stMultiSelect"] [data-baseweb="tag"] {
-        background: rgba(255, 77, 87, 0.92) !important;
+        background: rgba(0, 122, 255, 0.92) !important;
         border-radius: 10px !important;
-        box-shadow: 0 8px 24px rgba(255,77,87,0.24) !important;
+        box-shadow: 0 8px 24px rgba(0,122,255,0.24) !important;
     }
 
     [data-testid="stRadio"] label,
@@ -290,15 +290,15 @@ st.markdown(
         --tt-border: rgba(255, 255, 255, 0.20);
         --tt-text: #f8fafc;
         --tt-muted: rgba(226, 232, 240, 0.78);
-        --tt-accent: #ff4d57;
-        --tt-blue: #38bdf8;
+        --tt-accent: #007AFF;
+        --tt-blue: #007AFF;
         --tt-purple: #d946ef;
         --tt-yellow: #fde047;
     }
 
     html, body, .stApp, [data-testid="stAppViewContainer"] {
         background:
-            radial-gradient(circle at 18% 8%, rgba(56, 189, 248, 0.22), transparent 34%),
+            radial-gradient(circle at 18% 8%, rgba(0, 122, 255, 0.22), transparent 34%),
             radial-gradient(circle at 88% 12%, rgba(217, 70, 239, 0.18), transparent 30%),
             linear-gradient(135deg, var(--tt-bg-0) 0%, var(--tt-bg-1) 55%, #07111f 100%) !important;
         color: var(--tt-text) !important;
@@ -331,7 +331,7 @@ st.markdown(
 
     div[data-testid="stSidebarContent"] {
         background:
-            radial-gradient(circle at 0% 0%, rgba(56, 189, 248, 0.18), transparent 34%),
+            radial-gradient(circle at 0% 0%, rgba(0, 122, 255, 0.18), transparent 34%),
             radial-gradient(circle at 100% 32%, rgba(217, 70, 239, 0.14), transparent 32%) !important;
     }
 
@@ -400,7 +400,7 @@ st.markdown(
     }
 
     div[data-testid="stMultiSelect"] [data-baseweb="tag"] {
-        background: rgba(255, 77, 87, 0.95) !important;
+        background: rgba(0, 122, 255, 0.95) !important;
         color: #ffffff !important;
         border-radius: 11px !important;
     }
@@ -513,6 +513,303 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+
+
+# =========================================================
+# 2.3) Final iOS #007AFF liquid-glass polish
+#      This layer intentionally comes last so it overrides the
+#      earlier red accent and gives the marked areas a consistent
+#      blue liquid-glass look.
+# =========================================================
+st.markdown(
+    """
+    <style>
+    :root {
+        --ios-blue: #007AFF;
+        --ios-blue-rgb: 0, 122, 255;
+        --ios-blue-soft: rgba(0, 122, 255, 0.18);
+        --ios-blue-mid: rgba(0, 122, 255, 0.42);
+        --ios-blue-strong: rgba(0, 122, 255, 0.92);
+        --liquid-surface: rgba(16, 24, 39, 0.58);
+        --liquid-surface-2: rgba(25, 34, 52, 0.66);
+        --liquid-border: rgba(255, 255, 255, 0.24);
+        --liquid-border-blue: rgba(0, 122, 255, 0.52);
+        --liquid-highlight: rgba(255, 255, 255, 0.34);
+        --liquid-shadow: 0 22px 58px rgba(0, 0, 0, 0.34), 0 0 34px rgba(0, 122, 255, 0.13);
+    }
+
+    /* Global background: keep the dark premium tone but make the main accent pure iOS blue. */
+    html, body, .stApp, [data-testid="stAppViewContainer"] {
+        background:
+            radial-gradient(circle at 12% 8%, rgba(var(--ios-blue-rgb), 0.26), transparent 32%),
+            radial-gradient(circle at 88% 4%, rgba(var(--ios-blue-rgb), 0.13), transparent 28%),
+            radial-gradient(circle at 78% 74%, rgba(255,255,255,0.055), transparent 34%),
+            linear-gradient(135deg, #050914 0%, #071426 45%, #08101d 100%) !important;
+    }
+
+    /* Red-circled status/info area. */
+    div[data-testid="stAlert"] {
+        position: relative !important;
+        overflow: hidden !important;
+        border-radius: 26px !important;
+        border: 1px solid rgba(var(--ios-blue-rgb), 0.50) !important;
+        background:
+            linear-gradient(135deg, rgba(255,255,255,0.15), rgba(255,255,255,0.055)),
+            radial-gradient(circle at 0% 0%, rgba(var(--ios-blue-rgb), 0.38), transparent 44%),
+            rgba(17, 26, 42, 0.70) !important;
+        box-shadow: var(--liquid-shadow), inset 0 1px 0 rgba(255,255,255,0.30) !important;
+        backdrop-filter: blur(26px) saturate(180%) !important;
+        -webkit-backdrop-filter: blur(26px) saturate(180%) !important;
+    }
+    div[data-testid="stAlert"]::before {
+        content: "";
+        position: absolute;
+        inset: 1px 1px auto 1px;
+        height: 48%;
+        pointer-events: none;
+        border-radius: 25px 25px 18px 18px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.22), rgba(255,255,255,0.00));
+    }
+
+    /* Red-circled KPI cards. */
+    div[data-testid="stMetric"] {
+        position: relative !important;
+        overflow: hidden !important;
+        min-height: 96px !important;
+        padding: 18px 18px !important;
+        border-radius: 28px !important;
+        border: 1px solid rgba(255,255,255,0.24) !important;
+        background:
+            radial-gradient(circle at 16% 0%, rgba(255,255,255,0.30), transparent 36%),
+            radial-gradient(circle at 92% 18%, rgba(var(--ios-blue-rgb), 0.30), transparent 42%),
+            linear-gradient(135deg, rgba(255,255,255,0.15), rgba(255,255,255,0.060)),
+            rgba(16, 24, 39, 0.72) !important;
+        box-shadow: var(--liquid-shadow), inset 0 1px 0 rgba(255,255,255,0.27), inset 0 -1px 0 rgba(255,255,255,0.06) !important;
+        backdrop-filter: blur(28px) saturate(185%) !important;
+        -webkit-backdrop-filter: blur(28px) saturate(185%) !important;
+    }
+    div[data-testid="stMetric"]::after {
+        content: "";
+        position: absolute;
+        left: 12px;
+        right: 12px;
+        top: 8px;
+        height: 28px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, rgba(255,255,255,0.24), rgba(255,255,255,0.04));
+        pointer-events: none;
+        opacity: 0.75;
+    }
+    div[data-testid="stMetric"] [data-testid="stMetricLabel"] {
+        color: rgba(238, 246, 255, 0.90) !important;
+        font-weight: 720 !important;
+    }
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+        color: #ffffff !important;
+        font-weight: 900 !important;
+        letter-spacing: -0.045em !important;
+        text-shadow: 0 0 24px rgba(var(--ios-blue-rgb), 0.20) !important;
+    }
+
+    /* Red-circled chart panels: glass border/highlight, but no backdrop blur on Plotly canvas itself. */
+    div[data-testid="stVerticalBlock"] > div:has(.js-plotly-plot) {
+        position: relative !important;
+        overflow: hidden !important;
+        border-radius: 30px !important;
+        border: 1px solid rgba(255,255,255,0.22) !important;
+        background:
+            radial-gradient(circle at 18% 0%, rgba(var(--ios-blue-rgb), 0.16), transparent 34%),
+            linear-gradient(135deg, rgba(255,255,255,0.11), rgba(255,255,255,0.040)),
+            rgba(9, 15, 28, 0.86) !important;
+        box-shadow: 0 24px 68px rgba(0,0,0,0.36), 0 0 38px rgba(var(--ios-blue-rgb),0.10), inset 0 1px 0 rgba(255,255,255,0.18) !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        contain: paint;
+    }
+    div[data-testid="stVerticalBlock"] > div:has(.js-plotly-plot)::before {
+        content: "";
+        position: absolute;
+        z-index: 0;
+        inset: 1px 1px auto 1px;
+        height: 90px;
+        border-radius: 29px 29px 18px 18px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.00));
+        pointer-events: none;
+    }
+    div[data-testid="stVerticalBlock"] > div:has(.js-plotly-plot) > * {
+        position: relative;
+        z-index: 1;
+    }
+
+    /* Sidebar glass panel and controls. */
+    section[data-testid="stSidebar"] {
+        background:
+            radial-gradient(circle at 0% 8%, rgba(var(--ios-blue-rgb), 0.24), transparent 32%),
+            radial-gradient(circle at 100% 36%, rgba(var(--ios-blue-rgb), 0.16), transparent 30%),
+            rgba(8, 13, 26, 0.86) !important;
+        border-right: 1px solid rgba(var(--ios-blue-rgb), 0.24) !important;
+        box-shadow: 18px 0 48px rgba(0,0,0,0.36), inset -1px 0 0 rgba(255,255,255,0.06) !important;
+    }
+
+    div[data-baseweb="select"] > div,
+    div[data-baseweb="base-input"] > div,
+    div[data-testid="stMultiSelect"] [data-baseweb="select"] > div {
+        border-radius: 22px !important;
+        border: 1px solid rgba(255,255,255,0.22) !important;
+        background:
+            linear-gradient(135deg, rgba(255,255,255,0.13), rgba(255,255,255,0.045)),
+            rgba(10, 16, 31, 0.68) !important;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), 0 10px 24px rgba(0,0,0,0.18) !important;
+        backdrop-filter: blur(18px) saturate(180%) !important;
+        -webkit-backdrop-filter: blur(18px) saturate(180%) !important;
+    }
+
+    div[data-testid="stMultiSelect"] [data-baseweb="tag"] {
+        border-radius: 999px !important;
+        background:
+            linear-gradient(135deg, rgba(var(--ios-blue-rgb), 0.98), rgba(30, 144, 255, 0.78)),
+            radial-gradient(circle at 24% 18%, rgba(255,255,255,0.42), transparent 36%) !important;
+        color: #ffffff !important;
+        border: 1px solid rgba(255,255,255,0.28) !important;
+        box-shadow: 0 9px 24px rgba(var(--ios-blue-rgb),0.28), inset 0 1px 0 rgba(255,255,255,0.32) !important;
+    }
+
+    /* iOS-blue slider/radio/checkbox accents. */
+    div[data-testid="stSlider"] div[data-baseweb="slider"] > div:nth-child(2) {
+        background: rgba(255,255,255,0.18) !important;
+    }
+    div[data-testid="stSlider"] [role="slider"] {
+        background: #ffffff !important;
+        border: 2px solid rgba(var(--ios-blue-rgb), 0.95) !important;
+        box-shadow: 0 0 0 5px rgba(var(--ios-blue-rgb), 0.15), 0 8px 18px rgba(0,0,0,0.28) !important;
+    }
+    [data-testid="stRadio"] label:has(input:checked),
+    [data-testid="stCheckbox"] label:has(input:checked) {
+        color: #ffffff !important;
+    }
+    [data-testid="stRadio"] input:checked + div,
+    [data-testid="stCheckbox"] input:checked + div {
+        border-color: rgba(var(--ios-blue-rgb), 0.95) !important;
+        background-color: rgba(var(--ios-blue-rgb), 0.95) !important;
+    }
+
+    /* Liquid-glass buttons: Apply update and all Streamlit buttons. */
+    .stButton > button,
+    div[data-testid="stDownloadButton"] > button,
+    div[data-testid="stFormSubmitButton"] > button,
+    button[kind="primary"],
+    button[kind="secondary"] {
+        position: relative !important;
+        overflow: hidden !important;
+        min-height: 48px !important;
+        border-radius: 999px !important;
+        color: #ffffff !important;
+        border: 1px solid rgba(255,255,255,0.34) !important;
+        background:
+            radial-gradient(circle at 22% 18%, rgba(255,255,255,0.42), transparent 30%),
+            linear-gradient(135deg, rgba(var(--ios-blue-rgb), 0.95), rgba(var(--ios-blue-rgb), 0.52) 58%, rgba(255,255,255,0.16)) !important;
+        box-shadow:
+            0 18px 38px rgba(var(--ios-blue-rgb),0.26),
+            0 12px 28px rgba(0,0,0,0.30),
+            inset 0 1px 0 rgba(255,255,255,0.46),
+            inset 0 -1px 0 rgba(255,255,255,0.12) !important;
+        backdrop-filter: blur(22px) saturate(190%) !important;
+        -webkit-backdrop-filter: blur(22px) saturate(190%) !important;
+        font-weight: 850 !important;
+        letter-spacing: -0.01em !important;
+        transition: filter 160ms ease, box-shadow 160ms ease, border-color 160ms ease !important;
+        transform: none !important;
+    }
+    .stButton > button::before,
+    div[data-testid="stDownloadButton"] > button::before,
+    div[data-testid="stFormSubmitButton"] > button::before,
+    button[kind="primary"]::before,
+    button[kind="secondary"]::before {
+        content: "";
+        position: absolute;
+        inset: 1px 2px auto 2px;
+        height: 48%;
+        border-radius: 999px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.38), rgba(255,255,255,0.03));
+        pointer-events: none;
+    }
+    .stButton > button:hover,
+    div[data-testid="stDownloadButton"] > button:hover,
+    div[data-testid="stFormSubmitButton"] > button:hover,
+    button[kind="primary"]:hover,
+    button[kind="secondary"]:hover {
+        filter: brightness(1.08) saturate(1.08) !important;
+        border-color: rgba(255,255,255,0.54) !important;
+        box-shadow:
+            0 22px 46px rgba(var(--ios-blue-rgb),0.34),
+            0 14px 30px rgba(0,0,0,0.34),
+            inset 0 1px 0 rgba(255,255,255,0.56) !important;
+        transform: none !important;
+    }
+    .stButton > button:active,
+    div[data-testid="stDownloadButton"] > button:active,
+    div[data-testid="stFormSubmitButton"] > button:active,
+    button[kind="primary"]:active,
+    button[kind="secondary"]:active {
+        filter: brightness(0.96) !important;
+        box-shadow: 0 10px 24px rgba(var(--ios-blue-rgb),0.22), inset 0 2px 8px rgba(0,0,0,0.18) !important;
+    }
+
+    /* Plotly timeline controls use the same blue glass language. */
+    .js-plotly-plot .updatemenu-item-rect {
+        fill: rgba(0, 122, 255, 0.22) !important;
+        stroke: rgba(255,255,255,0.30) !important;
+    }
+    .js-plotly-plot .slider-bg {
+        fill: rgba(0, 122, 255, 0.16) !important;
+        stroke: rgba(255,255,255,0.28) !important;
+    }
+    .js-plotly-plot .slider-grip-rect,
+    .js-plotly-plot .slider-handle {
+        fill: #007AFF !important;
+        stroke: rgba(255,255,255,0.68) !important;
+    }
+
+    .glass-caption {
+        position: relative !important;
+        overflow: hidden !important;
+        border-radius: 26px !important;
+        border: 1px solid rgba(var(--ios-blue-rgb), 0.44) !important;
+        background:
+            radial-gradient(circle at 0% 0%, rgba(var(--ios-blue-rgb), 0.28), transparent 44%),
+            linear-gradient(135deg, rgba(255,255,255,0.13), rgba(255,255,255,0.055)),
+            rgba(13, 22, 39, 0.72) !important;
+        box-shadow: var(--liquid-shadow), inset 0 1px 0 rgba(255,255,255,0.24) !important;
+        backdrop-filter: blur(24px) saturate(180%) !important;
+        -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+    }
+    .glass-caption::before {
+        content: "";
+        position: absolute;
+        inset: 1px 2px auto 2px;
+        height: 42%;
+        border-radius: 24px 24px 16px 16px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0));
+        pointer-events: none;
+    }
+
+    /* Mobile keeps the same look without becoming too heavy. */
+    @media (max-width: 768px) {
+        div[data-testid="stMetric"] { min-height: 82px !important; border-radius: 24px !important; }
+        .stButton > button, div[data-testid="stFormSubmitButton"] > button { min-height: 44px !important; }
+        div[data-testid="stVerticalBlock"] > div:has(.js-plotly-plot) { border-radius: 24px !important; }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# Use a blue-first Plotly palette so new categorical traces do not default to red.
+px.defaults.color_discrete_sequence = [
+    "#007AFF", "#64D2FF", "#30D158", "#BF5AF2", "#FFD60A",
+    "#5E5CE6", "#00C7BE", "#FF9F0A", "#8E8E93", "#AC8E68",
+]
+
 # =========================================================
 # 3) Load data
 # =========================================================
@@ -621,7 +918,7 @@ def render_plotly(fig):
 PRECIPITATION_COLORSCALE = [
     [0.00, "rgba(56,189,248,0.20)"],    # very soft edge blue
     [0.18, "rgba(56,189,248,0.40)"],
-    [0.36, "rgba(14,165,233,0.62)"],     # moderate blue core
+    [0.36, "rgba(0, 122, 255,0.62)"],     # moderate blue core
     [0.56, "rgba(124,58,237,0.76)"],     # violet
     [0.72, "rgba(236,72,153,0.86)"],     # pink
     [0.88, "rgba(253,224,71,0.94)"],     # heavy yellow
@@ -2009,7 +2306,7 @@ if chart_mode == "Heatmap Animation":
                             colorscale=[
                                 [0.00, "rgba(56,189,248,0.00)"],
                                 [0.40, "rgba(56,189,248,0.30)"],
-                                [1.00, "rgba(14,165,233,0.46)"],
+                                [1.00, "rgba(0, 122, 255,0.46)"],
                             ],
                             cmin=0,
                             cmax=55,
